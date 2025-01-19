@@ -1,0 +1,19 @@
+[project]
+name = "hdl_depends"
+version = "0.0.1"
+authors = [
+  { name="Pev Hall", email="pev.hall@gmail.com" },
+]
+description = "A small package to find HDL file dependencies"
+readme = "README.md"
+requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/pevhall/hdldepends"
+Issues = "https://github.com/pevhall/hdldepends/issues"
