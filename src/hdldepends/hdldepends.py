@@ -1,6 +1,5 @@
 import re
 import sys
-import time
 import pickle
 
 # try:
@@ -40,7 +39,6 @@ regex_patterns = {
     ),
 }
 
-
 @dataclass(frozen=True)
 class Name:
     lib: str
@@ -67,11 +65,8 @@ def path_from_dir(dir: Path, loc: Path):
 
 
 def get_file_modification_time(f: Path):
-    return f.stat().st_mtime
+    return f.lstat().st_mtime
 
-
-def get_current_time():
-    return time.time()
 
 
 def str_to_name(s: str):
@@ -105,13 +100,18 @@ class FileObj:
         self.package_deps: list[Name] = []
         self.entity_deps: list[Name] = []
         self.level = None
+        self.modification_time =  self.get_modification_time_on_disk()
 
-    def register_with_lookup(self, look: Lookup):
+    def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
         for p in self.packages:
             look.add_package(p, self)
         for e in self.entities:
             look.add_entity(e, self)
-        look.add_loc(self.loc, self)
+        if not skip_loc:
+            look.add_loc(self.loc, self)
+
+    def get_modification_time_on_disk(self):
+        return get_file_modification_time(self.loc)
 
     @staticmethod
     def _add_to_f_deps(file_deps, f_obj):
@@ -148,6 +148,45 @@ class FileObj:
         self.level = level
         return order
 
+    def requires_update(self):
+        return self.get_modification_time_on_disk() != self.modification_time
+
+    def update(self, verbose : bool = False) -> tuple[bool, bool]:
+        """Returns True if the dependencies have changed, Returns True if file was modified"""
+        if self.requires_update():
+            f_obj = parse_vhdl_file(None, self.loc, self.lib)
+            if self == f_obj:
+                if verbose:
+                    print(f'file {self.loc} updated but dependencies remain unchanaged')
+                self.modification_time = f_obj.modification_time
+                return False, True
+            else:
+                if verbose:
+                    print(f'file {self.loc} is updated and dependencies have changed')
+                self.replace(f_obj)
+
+                return True, True
+        return False, False
+
+    def replace(self, f_obj : "FileObj"):
+        self.__dict__.update(f_obj.__dict__) #this didn't work
+
+
+    def __eq__(self, other : "FileObj"):
+        return (self.loc      == other.loc
+            and self.lib      == other.lib
+            and self.packages == other.packages
+            and self.entities == other.entities
+            and self.package_deps == other.package_deps
+            and self.entity_deps == other.entity_deps)
+            #modificaiton time and level are not checked
+
+        if self.lib != self.lib:
+            return False
+        if self.lib != self.lib:
+            return False
+
+
 
 IGNORE_SET_LIBS_DEFAULT = {
     "ieee",
@@ -161,8 +200,8 @@ class ConflictFileObj:
             self.add_f_obj(conflict)
 
     def add_f_obj(self, f_obj: FileObj):
-        if f_obj in self.loc_2_file_obj:
-            raise Exception("ERROR tried to add the same file twice to confict")
+        if f_obj.loc in self.loc_2_file_obj:
+            raise Exception(f"ERROR tried to add the same file twice to confict, {f_obj.loc}")
         self.loc_2_file_obj[f_obj.loc] = f_obj
 
     def print_confict(self, key):
@@ -211,6 +250,7 @@ class LookupCommon(Lookup):
         self.toml_modification_time = None
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
+        print(f'Adding {key} to dict')
         if key in d:
             if not self.allow_duplicates:
                 raise Exception(f"ERROR: tried to add {key} twice")
@@ -231,7 +271,7 @@ class LookupCommon(Lookup):
 
     @staticmethod
     def atempt_to_load_from_pickle(
-        pickle_loc: Path, toml_loc: Path
+            pickle_loc: Path, toml_loc: Path, verbose: bool = False
     ) -> Optional[object]:
         assert toml_loc.is_file()
         if pickle_loc.is_file():
@@ -243,7 +283,13 @@ class LookupCommon(Lookup):
 
             toml_modification_time = get_file_modification_time(toml_loc)
             if toml_modification_time == inst.toml_modification_time:
-                print(f"loaded from {pickle_loc}")
+                print(f"loaded from {pickle_loc}, updating required files")
+                any_changes = inst.check_for_src_files_updates(verbose=verbose)
+                if any_changes:
+                    if verbose:
+                        print(f"Updating pickle wtih the changes detected on disk")
+                    inst.save_to_pickle(pickle_loc)
+        
                 return inst
             print(f"{pickle_loc} out of date")
         return None
@@ -253,37 +299,28 @@ class LookupCommon(Lookup):
         with open(pickle_loc, "wb") as pickle_f:
             pickle.dump(self, pickle_f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    # @staticmethod
-    # def create_from_toml(toml_loc : Path, work_dir : Optional[Path] = None, verbose:bool=False):
-    #     if not toml_loc.is_file():
-    #         if toml_loc.is_absolute() or work_dir is None:
-    #             raise FileNotFoundError(f'ERROR could not find file {toml_loc}')
-    #         print(f'tring to find {toml_loc} in previouse directoires')
-    #         temp_dir = toml_loc.parents[1]
-    #         test = temp_dir / toml_loc
-    #         while not test.is_file():
-    #             temp_dir = temp_dir.parents[0]
-    #             test = temp_dir / toml_loc
-    #             if test == Path('/'):
-    #                 raise FileNotFoundError(f'ERROR could not find file {toml_loc}')
-    #         toml_loc = test
-    #
-    #     work_dir = toml_loc.parents[0]
-    #     pickle_loc = LookupCommon.toml_loc_to_pickle_loc(toml_loc)
-    #
-    #     inst = LookupCommon.atempt_to_load_from_pickle(pickle_loc, toml_loc)
-    #     if inst is not None:
-    #         return inst
-    #
-    #     print(f'loading from {toml_loc}')
-    #     with open(toml_loc, 'rb') as toml_f:
-    #         config = tomllib.load(toml_f)
-    #         inst = LookupCommon.create_from_config_dict(config, work_dir=work_dir, verbose=verbose)
-    #
-    #     inst.toml_modification_time = get_file_modification_time(toml_loc)
-    #     inst.save_to_pickle(pickle_loc)
-    #
-    #     return inst
+    def check_for_src_files_updates(self, verbose:bool=False) -> bool:
+        """Returns True if there where any changes"""
+        compile_order_out_of_date = False
+        any_changes = False
+        for _, f_obj in self.loc_2_file_obj.items():
+            dependency_changes, changes = f_obj.update(verbose=verbose)
+
+            if dependency_changes:
+                compile_order_out_of_date = True
+            if changes:
+                any_changes = True
+
+        if compile_order_out_of_date:
+            if(verbose):
+                print('Compile order has change')
+            # brute force update of dict because resolving a conflict is annoying
+            self.package_name_2_file_obj = {}
+            self.entity_name_2_file_obj = {}
+            for _, f_obj in self.loc_2_file_obj.items():
+                f_obj.register_with_lookup(self, skip_loc=True)
+        
+        return any_changes
 
     @staticmethod
     def _process_config_opt_lib(config: dict, key: str, callback):
@@ -440,31 +477,10 @@ class LookupPrj(LookupCommon):
         self.f_obj_top = None
         self._compile_order = None
 
-    # @staticmethod
-    # def create_from_toml(toml_loc : Path, verbose:bool=False):
-    #     with open(toml_loc, 'rb') as toml_f:
-    #         config = tomllib.load(toml_f)
-    #
-    #     work_dir = toml_loc.parents[0]
-    #     common_toml = None
-    #     if 'common_toml' in config:
-    #         common_toml = Path(config['common_toml'])
-    #         if not isinstance(common_toml, list):
-    #             common_toml = [common_toml]
-    #         for i in range(len(common_toml)):
-    #             test = path_from_dir(work_dir, common_toml[i])
-    #             if test.is_file():
-    #                 common_toml[i] = test
-    #
-    #     return LookupPrj.create_from_config_dict(config, work_dir=work_dir, common_toml=common_toml, verbose=verbose)
-
     @staticmethod
     def create_from_config_dict(
         config: dict, work_dir: Path, look_common=[], verbose=False
     ):
-        # look_common = []
-        # for c_toml in common_toml:
-        #     look_common.append(LookupCommon.create_from_toml(c_toml, work_dir = work_dir, verbose=verbose))
 
         look = LookupPrj(look_common)
         look.initalise_from_config_dict(config, verbose=verbose)
@@ -590,7 +606,7 @@ class LookupPrj(LookupCommon):
 
 
 # Function to find matches in the VHDL code
-def parse_vhdl_file(look: Lookup, loc: Path, lib="work", verbose=False):
+def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work", verbose=False):
 
     if verbose:
         print(f"passing VHDL file {loc}:")
@@ -645,12 +661,9 @@ def parse_vhdl_file(look: Lookup, loc: Path, lib="work", verbose=False):
                 case _:
                     print(f"error construct '{construct}'")
 
-        f_obj.register_with_lookup(look)
+        if look is not None:
+            f_obj.register_with_lookup(look)
         return f_obj
-
-
-# Run the parser on the example VHDL code
-# matches = parse_vhdl(vhdl_code)
 
 
 def contains_any(a: list, b: list) -> bool:
@@ -715,7 +728,7 @@ def create_lookup_from_toml(
         print(f"create LookupCommon from {toml_loc}")
     pickle_loc = LookupCommon.toml_loc_to_pickle_loc(toml_loc)
 
-    inst = LookupCommon.atempt_to_load_from_pickle(pickle_loc, toml_loc)
+    inst = LookupCommon.atempt_to_load_from_pickle(pickle_loc, toml_loc, verbose=verbose)
     if inst is not None:
         return inst
 
