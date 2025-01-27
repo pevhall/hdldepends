@@ -1,0 +1,5 @@
+
+ignore_libs = [ 'ieee', 'std' ]
+file_list_files = './fw_files.txt'
+
+
