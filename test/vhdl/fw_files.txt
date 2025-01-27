@@ -1,7 +1,6 @@
-/home/pev/del/del.vhd
-/home/pev/del/del2.vhd
-/home/pev/del/del21.vhd
-/home/pev/del/del211.vhd
-/home/pev/del/del3.vhd
-/home/pev/del/del3_2.vhd
-/home/pev/del/del_pkg.vhd
+./del.vhd
+./del2.vhd
+./del21.vhd
+./del211.vhd
+./del3_2.vhd
+./del_pkg.vhd

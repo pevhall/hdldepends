@@ -518,8 +518,8 @@ class LookupPrj(LookupCommon):
 
     def write_compile_order(self, compile_order_loc: Path):
         with open(compile_order_loc, "w") as f_order:
-            for f_obj in compile_order:
-                f_order.write(f"{f_obj.loc}\n")
+            for f_obj in self.compile_order:
+                f_order.write(f"{f_obj.lib} {f_obj.loc}\n")
 
     def register_file_list(
         self, file_list: list[tuple[str, Path]], verbose: bool = False
@@ -528,10 +528,10 @@ class LookupPrj(LookupCommon):
             f_obj = self._get_loc_from_common(loc)
             if f_obj is not None:
                 assert f_obj.lib == lib
+                f_obj.register_with_lookup(self)
             else:
                 # not passed in common lookup pass in prj lookup
                 f_obj = parse_vhdl_file(self, loc, lib=lib, verbose=verbose)
-            f_obj.register_with_lookup(self)
 
     def get_loc(self, loc: Path, lib_to_add_to_if_not_found: Optional[str] = None):
         try:
@@ -646,6 +646,7 @@ def parse_vhdl_file(look: Lookup, loc: Path, lib="work", verbose=False):
                     print(f"error construct '{construct}'")
 
         f_obj.register_with_lookup(look)
+        return f_obj
 
 
 # Run the parser on the example VHDL code
