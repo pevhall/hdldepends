@@ -4,7 +4,6 @@ import pickle
 
 # try:
 import tomllib
-
 # except ModuleNotFoundError:
 #     import pip._vendor.tomli as tomllib
 import argparse
@@ -12,18 +11,39 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Union
 
-# Updated regular expressions with a negative lookahead to ignore lines starting with --
+log_level = 0
+
+#created own crapy logger because logging doesn't work with f strings
+class log:
+    def _log(severity, *args, **kwargs):
+        print(f'[{severity}]', *args, **kwargs, file=sys.stderr)
+
+    def error(*args, **kwargs):
+        log._log('ERROR', *args, **kwargs)
+
+    def warning(*args, **kwargs):
+        if log_level >= 0:
+            log._log('WARNING', *args, **kwargs)
+
+    def info(*args, **kwargs):
+        if log_level >= 1:
+            log._log('INFO', *args, **kwargs)
+
+    def debug(*args, **kwargs):
+        if log_level >= 2:
+            log._log('DEBUG', *args, **kwargs)
+
 regex_patterns = {
     "package_decl": re.compile(
-        r"^(?!\s*--)\s*package\s+(\w+)\s+is.*?end\s+package\s*;",
+        r"^(?!\s*--)\s*package\s+(\w+)\s+is.*?end\s+package",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
-        r"^(?!\s*--)\s*entity\s+(\w+)\s+is.*?end\s+entity\s*;",
+        r"^(?!\s*--)\s*entity\s+(\w+)\s+is.*?end\s+entity",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_decl": re.compile(
-        r"^(?!\s*--)\s*component\s+(\w+)\s+is.*?end\s+component\s*;",
+        r"^(?!\s*--)\s*component\s+(\w+)\s+is.*?end\s+component",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_inst": re.compile(
@@ -37,12 +57,18 @@ regex_patterns = {
     "package_use": re.compile(
         r"^(?!\s*--)\s*use\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
     ),
-}
+    }
 
-@dataclass(frozen=True)
 class Name:
     lib: str
     name: Optional[str]
+
+    def __init__(self, lib, name):
+        self.lib = lib.lower() #VHDL case insenstive
+        if name is not None:
+            self.name = name.lower() #VHDL case insenstive
+        else:
+            self.name = None
 
     def __str__(self):
         return f"{self.lib}.{self.name}"
@@ -151,18 +177,16 @@ class FileObj:
     def requires_update(self):
         return self.get_modification_time_on_disk() != self.modification_time
 
-    def update(self, verbose : bool = False) -> tuple[bool, bool]:
+    def update(self) -> tuple[bool, bool]:
         """Returns True if the dependencies have changed, Returns True if file was modified"""
         if self.requires_update():
             f_obj = parse_vhdl_file(None, self.loc, self.lib)
             if self == f_obj:
-                if verbose:
-                    print(f'file {self.loc} updated but dependencies remain unchanaged')
+                log.info(f'file {self.loc} updated but dependencies remain unchanaged')
                 self.modification_time = f_obj.modification_time
                 return False, True
             else:
-                if verbose:
-                    print(f'file {self.loc} is updated and dependencies have changed')
+                log.info(f'file {self.loc} is updated and dependencies have changed')
                 self.replace(f_obj)
 
                 return True, True
@@ -204,12 +228,12 @@ class ConflictFileObj:
             raise Exception(f"ERROR tried to add the same file twice to confict, {f_obj.loc}")
         self.loc_2_file_obj[f_obj.loc] = f_obj
 
-    def print_confict(self, key):
+    def log_confict(self, key):
 
-        print(f"Conflict on key {key} could not resolve between")
-        print(f"  (please resolve buy adding the one of the files to the prject toml):")
+        log.error(f"Conflict on key {key} could not resolve between")
+        log.error(f"  (please resolve buy adding the one of the files to the prject toml):")
         for loc in self.loc_2_file_obj.keys():
-            print(f"\t{loc}")
+            log.error(f"\t{loc}")
 
 
 FileObjLookup = Union[ConflictFileObj, FileObj]
@@ -250,7 +274,7 @@ class LookupCommon(Lookup):
         self.toml_modification_time = None
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
-        print(f'Adding {key} to dict')
+        log.info(f'Adding {key} to dict')
         if key in d:
             if not self.allow_duplicates:
                 raise Exception(f"ERROR: tried to add {key} twice")
@@ -271,11 +295,11 @@ class LookupCommon(Lookup):
 
     @staticmethod
     def atempt_to_load_from_pickle(
-            pickle_loc: Path, toml_loc: Path, verbose: bool = False
+            pickle_loc: Path, toml_loc: Path
     ) -> Optional[object]:
         assert toml_loc.is_file()
         if pickle_loc.is_file():
-            print(f"atempting to load cache from {pickle_loc}")
+            log.info(f"atempting to load cache from {pickle_loc}")
             pickle_mod_time = get_file_modification_time(pickle_loc)
             with open(pickle_loc, "rb") as pickle_f:
                 inst = pickle.load(pickle_f)
@@ -283,28 +307,27 @@ class LookupCommon(Lookup):
 
             toml_modification_time = get_file_modification_time(toml_loc)
             if toml_modification_time == inst.toml_modification_time:
-                print(f"loaded from {pickle_loc}, updating required files")
-                any_changes = inst.check_for_src_files_updates(verbose=verbose)
+                log.info(f"loaded from {pickle_loc}, updating required files")
+                any_changes = inst.check_for_src_files_updates()
                 if any_changes:
-                    if verbose:
-                        print(f"Updating pickle wtih the changes detected on disk")
+                    log.info(f"Updating pickle wtih the changes detected on disk")
                     inst.save_to_pickle(pickle_loc)
         
                 return inst
-            print(f"{pickle_loc} out of date")
+            log.info(f"{pickle_loc} out of date")
         return None
 
     def save_to_pickle(self, pickle_loc: Path):
-        print(f"Caching to {pickle_loc}")
+        log.info(f"Caching to {pickle_loc}")
         with open(pickle_loc, "wb") as pickle_f:
             pickle.dump(self, pickle_f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def check_for_src_files_updates(self, verbose:bool=False) -> bool:
+    def check_for_src_files_updates(self) -> bool:
         """Returns True if there where any changes"""
         compile_order_out_of_date = False
         any_changes = False
         for _, f_obj in self.loc_2_file_obj.items():
-            dependency_changes, changes = f_obj.update(verbose=verbose)
+            dependency_changes, changes = f_obj.update()
 
             if dependency_changes:
                 compile_order_out_of_date = True
@@ -312,8 +335,7 @@ class LookupCommon(Lookup):
                 any_changes = True
 
         if compile_order_out_of_date:
-            if(verbose):
-                print('Compile order has change')
+            log.info('Compile order has change')
             # brute force update of dict because resolving a conflict is annoying
             self.package_name_2_file_obj = {}
             self.entity_name_2_file_obj = {}
@@ -342,18 +364,17 @@ class LookupCommon(Lookup):
 
     @staticmethod
     def extract_set_str_from_config(
-        config: dict, key: str, verbose: bool = True
+        config: dict, key: str
     ) -> set[str]:
         if key not in config:
             return set()
         val = config[key]
         result = make_set(val)
-        if verbose:
-            print(f"{key} = {list(result)}")
+        log.info(f"{key} = {list(result)}")
         return result
 
     def extract_set_name_from_config(
-        config: dict, key: str, verbose: bool = True
+        config: dict, key: str
     ) -> set[Name]:
         l = []
 
@@ -361,23 +382,22 @@ class LookupCommon(Lookup):
             l.append(Name(lib=lib, name=name))
 
         LookupCommon._process_config_opt_lib(config, key, call_back_func)
-        if verbose:
-            print(f"{key} = {l}")
+        log.info(f"{key} = {l}")
         return set(l)
 
-    def initalise_from_config_dict(self, config: dict, verbose=False):
+    def initalise_from_config_dict(self, config: dict):
         self.ignore_set_libs = LookupCommon.extract_set_str_from_config(
-            config, "ignore_libs", verbose=verbose
+            config, "ignore_libs"
         )
         self.ignore_set_packages = LookupCommon.extract_set_name_from_config(
-            config, "ignore_packages", verbose=verbose
+            config, "ignore_packages"
         )
         self.ignore_set_entities = LookupCommon.extract_set_name_from_config(
-            config, "ignore_entities", verbose=verbose
+            config, "ignore_entities"
         )
 
     @staticmethod
-    def get_file_list_from_config_dict(config: dict, work_dir: Path, verbose=False):
+    def get_file_list_from_config_dict(config: dict, work_dir: Path):
 
         file_list: list[tuple(str, Path)] = []
 
@@ -403,16 +423,16 @@ class LookupCommon(Lookup):
         return file_list
 
     @staticmethod
-    def create_from_config_dict(config: dict, work_dir: Path, verbose=False):
+    def create_from_config_dict(config: dict, work_dir: Path):
 
         inst = LookupCommon()
-        inst.initalise_from_config_dict(config, verbose=verbose)
+        inst.initalise_from_config_dict(config)
         file_list = LookupCommon.get_file_list_from_config_dict(
-            config, work_dir, verbose=verbose
+            config, work_dir
         )
 
         for lib, loc in file_list:
-            parse_vhdl_file(inst, loc, lib=lib, verbose=verbose)
+            parse_vhdl_file(inst, loc, lib=lib)
 
         return inst
 
@@ -446,13 +466,14 @@ class LookupCommon(Lookup):
         if isinstance(item, FileObj):
             return item
         elif isinstance(item, ConflictFileObj):
-            item.print_confict(name)
+            item.log_confict(name)
             raise KeyError(f"ERROR: confict on package {name}")
 
     def get_entity(self, name: Name) -> Optional[FileObj]:
         if name not in self.entity_name_2_file_obj:
             if name.lib in self.ignore_set_libs:
                 return None
+
             if name in self.ignore_set_entities:
                 return None
             raise KeyError(f"ERROR: Could not find entity {name}")
@@ -461,7 +482,7 @@ class LookupCommon(Lookup):
         if isinstance(item, FileObj):
             return item
         elif isinstance(item, ConflictFileObj):
-            item.print_confict(name)
+            item.log_confict(name)
             raise KeyError(f"ERROR: confict on entity {name}")
 
 
@@ -479,16 +500,16 @@ class LookupPrj(LookupCommon):
 
     @staticmethod
     def create_from_config_dict(
-        config: dict, work_dir: Path, look_common=[], verbose=False
+        config: dict, work_dir: Path, look_common=[]
     ):
 
         look = LookupPrj(look_common)
-        look.initalise_from_config_dict(config, verbose=verbose)
+        look.initalise_from_config_dict(config)
         file_list = LookupCommon.get_file_list_from_config_dict(
-            config, work_dir, verbose=verbose
+            config, work_dir
         )
 
-        look.register_file_list(file_list, verbose=verbose)
+        look.register_file_list(file_list)
         if "top_file" in config:
 
             l = []
@@ -538,7 +559,7 @@ class LookupPrj(LookupCommon):
                 f_order.write(f"{f_obj.lib} {f_obj.loc}\n")
 
     def register_file_list(
-        self, file_list: list[tuple[str, Path]], verbose: bool = False
+        self, file_list: list[tuple[str, Path]]
     ):
         for lib, loc in file_list:
             f_obj = self._get_loc_from_common(loc)
@@ -547,7 +568,7 @@ class LookupPrj(LookupCommon):
                 f_obj.register_with_lookup(self)
             else:
                 # not passed in common lookup pass in prj lookup
-                f_obj = parse_vhdl_file(self, loc, lib=lib, verbose=verbose)
+                f_obj = parse_vhdl_file(self, loc, lib=lib)
 
     def get_loc(self, loc: Path, lib_to_add_to_if_not_found: Optional[str] = None):
         try:
@@ -558,12 +579,12 @@ class LookupPrj(LookupCommon):
                 return f_obj
             if lib_to_add_to_if_not_found is not None:
                 f_obj = parse_vhdl_file(
-                    self, loc, lib=lib_to_add_to_if_not_found, verbose=verbose
+                    self, loc, lib=lib_to_add_to_if_not_found
                 )
-                f_obj.register_with_lookup(self)
                 return f_obj
             else:
                 raise KeyError(f"file {loc} not found in dependency lookups")
+
 
     def _get_loc_from_common(self, loc: Path) -> Optional[FileObj]:
         for l_common in self.look_common:
@@ -574,21 +595,14 @@ class LookupPrj(LookupCommon):
     def _get_named_item(
         self, item_ref: str, name: Name, call_back_func_arr
     ) -> Optional[FileObj]:
-        got_none = False
         for call_back in call_back_func_arr:
             try:
                 result = call_back(name)
+                return result
             except KeyError:
                 pass
-            else:
-                if result is not None:
-                    return result
-                else:
-                    got_none = True
 
-        if not got_none:
-            raise KeyError(f"{item_ref} {name} not found in depndency lookups")
-        return None
+        raise KeyError(f"{item_ref} {name} not found in depndency lookups")
 
     def get_package(self, name: Name) -> Optional[FileObj]:
         def cb(name: Name):
@@ -606,10 +620,9 @@ class LookupPrj(LookupCommon):
 
 
 # Function to find matches in the VHDL code
-def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work", verbose=False):
+def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work"):
 
-    if verbose:
-        print(f"passing VHDL file {loc}:")
+    log.info(f"passing VHDL file {loc}:")
     with open(loc, "r") as file:
         vhdl = file.read()
 
@@ -624,42 +637,36 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work", verbose=False
                     for item in found:
                         name = Name(lib, item)
                         f_obj.packages.append(name)
-                        if verbose:
-                            print(f"\tpackage_decl: {name}")
+                        log.info(f"\tpackage_decl: {name}")
                 case "entity_decl":
                     for item in found:
                         name = Name(lib, item)
                         f_obj.entities.append(name)
-                        if verbose:
-                            print(f"\tentity_decl: {name}")
+                        log.info(f"\tentity_decl: {name}")
                 case "component_decl":
                     for item in found:
-                        if verbose:
-                            print(f"\tcomponent_decl: {name}")
+                        log.info(f"\tcomponent_decl: {name}")
                 case "component_inst":
                     for item in found:
                         name = Name(lib, item[1])
                         f_obj.entity_deps.append(name)
-                        if verbose:
-                            print(f"\tcomponent_inst: {name}")  # Extract component name
+                        log.info(f"\tcomponent_inst: {name}")  # Extract component name
                 case "direct_inst":
                     for item in found:
                         name = Name(item[1], item[2])
                         f_obj.entity_deps.append(name)
-                        if verbose:
-                            print(
+                        log.info(
                                 f"\tdirect_inst {name}"
                             )  # Extract library and component names
                 case "package_use":
                     for item in found:
                         name = Name(item[0], item[1])
                         f_obj.package_deps.append(name)
-                        if verbose:
-                            print(
-                                f"\tpackage_use {name}"
-                            )  # Extract library and package names`
+                        log.info(
+                            f"\tpackage_use {name}"
+                        )  # Extract library and package names`
                 case _:
-                    print(f"error construct '{construct}'")
+                    raise Exception(f"error construct '{construct}'")
 
         if look is not None:
             f_obj.register_with_lookup(look)
@@ -681,12 +688,12 @@ def issue_key(good_keys: list, keys: list) -> Optional[str]:
 
 
 def create_lookup_from_toml(
-    toml_loc: Path, work_dir: Optional[Path] = None, verbose: bool = False
+    toml_loc: Path, work_dir: Optional[Path] = None
 ):
     if not toml_loc.is_file():
         if toml_loc.is_absolute() or work_dir is None:
             raise FileNotFoundError(f"ERROR could not find file {toml_loc}")
-        print(f"tring to find {toml_loc} in previouse directoires")
+        log.info(f"tring to find {toml_loc} in previouse directoires")
         temp_dir = work_dir
         test = temp_dir / toml_loc
         while not test.is_file():
@@ -714,29 +721,26 @@ def create_lookup_from_toml(
             c_locs = make_list(c_locs)
             for loc in c_locs:
                 loc = Path(loc)
-                print(f"loc {loc}")
                 look_common.append(
-                    create_lookup_from_toml(loc, work_dir, verbose=verbose)
+                    create_lookup_from_toml(loc, work_dir)
                 )
 
-        if verbose:
-            print(f"create LookupPrj from {toml_loc}")
+        log.info(f"create LookupPrj from {toml_loc}")
         return LookupPrj.create_from_config_dict(
-            config, work_dir=work_dir, look_common=look_common, verbose=verbose
+            config, work_dir=work_dir, look_common=look_common
         )
-    if verbose:
-        print(f"create LookupCommon from {toml_loc}")
+    log.info(f"create LookupCommon from {toml_loc}")
     pickle_loc = LookupCommon.toml_loc_to_pickle_loc(toml_loc)
 
-    inst = LookupCommon.atempt_to_load_from_pickle(pickle_loc, toml_loc, verbose=verbose)
+    inst = LookupCommon.atempt_to_load_from_pickle(pickle_loc, toml_loc)
     if inst is not None:
         return inst
 
-    print(f"loading from {toml_loc}")
+    log.info(f"loading from {toml_loc}")
     with open(toml_loc, "rb") as toml_f:
         config = tomllib.load(toml_f)
         inst = LookupCommon.create_from_config_dict(
-            config, work_dir=work_dir, verbose=verbose
+            config, work_dir=work_dir
         )
 
     inst.toml_modification_time = get_file_modification_time(toml_loc)
@@ -746,11 +750,17 @@ def create_lookup_from_toml(
 
 # Use match statement to handle different constructs
 
+
+def set_log_level_from_verbose(args):
+    global log_level
+    if args.verbose is not None:
+        log_level = args.verbose
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="VHDL dependency parser")
 
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output."
+        "-v", "--verbose", action="count", help="verbose level... repeat up to two times"
     )
     # parser.add_argument("-c", "--clear-cache", action="store_true", help="Delete pickle cache files first.") #TODO
     parser.add_argument(
@@ -767,21 +777,22 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    set_log_level_from_verbose(args)
+
     # Example usage
-    print("Verbose:", args.verbose)
     # print("Clear Cache:", args.clear_cache)
-    print("Config TOML:", args.config_toml)
-    print("Compile Order:", args.compile_order)
+    log.debug("Config TOML:", args.config_toml)
+    log.debug("Compile Order:", args.compile_order)
     # print("File Dependencies:", args.file_dependencies)
 
     if len(args.config_toml) == 1:
-        look = create_lookup_from_toml(Path(args.config_toml[0]), verbose=args.verbose)
+        look = create_lookup_from_toml(Path(args.config_toml[0]))
     else:
         look_common = []
         for c_toml in common_toml:
             look_common.append(
                 create_lookup_from_toml(
-                    Path(c_toml), work_dir=work_dir, verbose=args.verbose
+                    Path(c_toml), work_dir=work_dir
                 )
             )
         look = LookupPrj(look_common)
@@ -795,9 +806,3 @@ if __name__ == "__main__":
     if args.compile_order is not None:
         look.write_compile_order(Path(args.compile_order))
 
-# if __name__ == '__main__':
-#
-#     compile_order_loc = Path('/home/pev/del/fw_compile_order.txt')
-#
-#     verbose = True
-#     compile_order_from_prj_toml(Path('/home/pev/del/hdl_deps_prj.toml'), compile_order_loc = compile_order_loc, verbose=verbose)
