@@ -262,6 +262,8 @@ class LookupSingular(Lookup):
         "ignore_entities",
         "files",
         "file_list_files",
+#        "extern_deps",
+        "extern_deps_file",
     ]
 
     def __init__(self, allow_duplicates: bool = True):
@@ -413,6 +415,8 @@ class LookupSingular(Lookup):
             config, work_dir
         )
         self.register_file_list(file_list)
+        
+        self.update_external_deps_from_config_dict(config, work_dir)
 
     def get_file_list_from_config_dict(self, config: dict, work_dir: Path):
 
@@ -424,21 +428,41 @@ class LookupSingular(Lookup):
 
         LookupSingular._process_config_opt_lib(config, "files", add_file_to_list)
 
-        def add_file_list_to_list(lib, str_list_file):
-            loc_list_file = Path(str_list_file)
-            loc_list_file = path_from_dir(work_dir, loc_list_file)
-            with open(loc_list_file, "r") as f_list_file:
+        def add_file_list_to_list(lib, f_str):
+            fl_loc = Path(f_str)
+            fl_loc = path_from_dir(work_dir, fl_loc)
+            with open(fl_loc, "r") as f_list_file:
                 for loc_str in f_list_file:
                     loc_str = loc_str.strip()
-                    loc = path_from_dir(loc_list_file.parents[0], Path(loc_str))
+                    loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
                     file_list.append((lib, loc))
-            self.dependency_files_modification_time[loc_list_file] = get_file_modification_time(loc_list_file)
+            self.dependency_files_modification_time[fl_loc] = get_file_modification_time(fl_loc)
 
         LookupSingular._process_config_opt_lib(
             config, "file_list_files", add_file_list_to_list
         )
 
         return file_list
+        
+    def update_external_deps_from_config_dict(self, config: dict, work_dir: Path):
+        def add_ext_dep_file_to_list(lib, f_str):
+            fl_loc = Path(f_str)
+            fl_loc = path_from_dir(work_dir, fl_loc)
+            with open(fl_loc, "r") as f_list_file:
+                for loc_str in f_list_file:
+                    loc_str = loc_str.strip()
+                    loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
+                    f_obj = FileObj(loc=loc, lib=lib)
+                    entity_name = Name(lib, loc.stem)
+                    f_obj.entities.append(entity_name)
+                    self.entity_name_2_file_obj[entity_name] = f_obj
+                    self.loc_2_file_obj[loc] = f_obj
+                    
+            self.dependency_files_modification_time[fl_loc] = get_file_modification_time(fl_loc)
+
+        # "extern_deps", #TODO
+        LookupSingular._process_config_opt_lib(config, "extern_deps_file", add_ext_dep_file_to_list)
+
 
     @staticmethod
     def create_from_config_dict(config: dict, work_dir: Path):
