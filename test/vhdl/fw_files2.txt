@@ -1,6 +1,3 @@
-./del.vhd
-./del2.vhd
 ./del21.vhd
 ./del211.vhd
-./del3_2.vhd
 ./del_pkg.vhd

@@ -1,5 +1,5 @@
 
-common_toml ='hdl_deps_common.toml'
+sub_toml ='hdl_deps_sub1.toml'
 ignore_entities = {'work' = 'delComp2'}
 top_file = './del.vhd'
 files = './del3.vhd'

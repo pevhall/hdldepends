@@ -70,8 +70,10 @@ class Name:
         else:
             self.name = None
 
-    def __str__(self):
-        return f"{self.lib}.{self.name}"
+    def __repr__(self):
+        if self.name is not None:
+            return f"{self.lib}.{self.name}"
+        return f"{self.lib}.*"
 
     def __eq__(self, other):
         if self.lib != other.lib:
@@ -90,7 +92,7 @@ def path_from_dir(dir: Path, loc: Path):
     return loc
 
 
-def get_file_modification_time(f: Path):
+def get_file_modification_time(f: Path) -> int:
     return f.lstat().st_mtime
 
 
@@ -253,7 +255,7 @@ def make_set(v) -> set:
         return make_list(v)
 
 
-class LookupCommon(Lookup):
+class LookupSingular(Lookup):
     TOML_KEYS = [
         "ignore_libs",
         "ignore_packages",
@@ -272,6 +274,7 @@ class LookupCommon(Lookup):
         self.ignore_set_entities: set[Name] = set()
         self.toml_loc: Optional[Path] = None
         self.toml_modification_time = None
+        self.dependency_files_modification_time : dict [Path : int ] = {}
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
         log.info(f'Adding {key} to dict')
@@ -306,7 +309,18 @@ class LookupCommon(Lookup):
             # time_diff = pickle_mod_time - inst.toml_modification_time
 
             toml_modification_time = get_file_modification_time(toml_loc)
-            if toml_modification_time == inst.toml_modification_time:
+            out_of_date = toml_modification_time != inst.toml_modification_time
+            if out_of_date:
+                log.info(f"will not load from pickle as {toml_loc} out of date")
+
+            if not out_of_date:
+                for f, mod_time in inst.dependency_files_modification_time.items():
+                    out_of_date = mod_time != get_file_modification_time(f)
+                    if out_of_date:
+                        log.info(f"will not load from pickle as {f} out of date")
+                        break
+                   
+            if not out_of_date:
                 log.info(f"loaded from {pickle_loc}, updating required files")
                 any_changes = inst.check_for_src_files_updates()
                 if any_changes:
@@ -381,23 +395,26 @@ class LookupCommon(Lookup):
         def call_back_func(lib: str, name: str):
             l.append(Name(lib=lib, name=name))
 
-        LookupCommon._process_config_opt_lib(config, key, call_back_func)
+        LookupSingular._process_config_opt_lib(config, key, call_back_func)
         log.info(f"{key} = {l}")
         return set(l)
 
-    def initalise_from_config_dict(self, config: dict):
-        self.ignore_set_libs = LookupCommon.extract_set_str_from_config(
+    def initalise_from_config_dict(self, config: dict, work_dir : Path):
+        self.ignore_set_libs = LookupSingular.extract_set_str_from_config(
             config, "ignore_libs"
         )
-        self.ignore_set_packages = LookupCommon.extract_set_name_from_config(
+        self.ignore_set_packages = LookupSingular.extract_set_name_from_config(
             config, "ignore_packages"
         )
-        self.ignore_set_entities = LookupCommon.extract_set_name_from_config(
+        self.ignore_set_entities = LookupSingular.extract_set_name_from_config(
             config, "ignore_entities"
         )
+        file_list = self.get_file_list_from_config_dict(
+            config, work_dir
+        )
+        self.register_file_list(file_list)
 
-    @staticmethod
-    def get_file_list_from_config_dict(config: dict, work_dir: Path):
+    def get_file_list_from_config_dict(self, config: dict, work_dir: Path):
 
         file_list: list[tuple(str, Path)] = []
 
@@ -405,7 +422,7 @@ class LookupCommon(Lookup):
             loc = path_from_dir(work_dir, Path(loc_str))
             file_list.append((lib, loc))
 
-        LookupCommon._process_config_opt_lib(config, "files", add_file_to_list)
+        LookupSingular._process_config_opt_lib(config, "files", add_file_to_list)
 
         def add_file_list_to_list(lib, str_list_file):
             loc_list_file = Path(str_list_file)
@@ -415,8 +432,9 @@ class LookupCommon(Lookup):
                     loc_str = loc_str.strip()
                     loc = path_from_dir(loc_list_file.parents[0], Path(loc_str))
                     file_list.append((lib, loc))
+            self.dependency_files_modification_time[loc_list_file] = get_file_modification_time(loc_list_file)
 
-        LookupCommon._process_config_opt_lib(
+        LookupSingular._process_config_opt_lib(
             config, "file_list_files", add_file_list_to_list
         )
 
@@ -425,16 +443,14 @@ class LookupCommon(Lookup):
     @staticmethod
     def create_from_config_dict(config: dict, work_dir: Path):
 
-        inst = LookupCommon()
-        inst.initalise_from_config_dict(config)
-        file_list = LookupCommon.get_file_list_from_config_dict(
-            config, work_dir
-        )
-
-        for lib, loc in file_list:
-            parse_vhdl_file(inst, loc, lib=lib)
-
+        inst = LookupSingular()
+        inst.initalise_from_config_dict(config, work_dir)
         return inst
+
+    def register_file_list(self,file_list):
+        for lib, loc in file_list:
+            parse_vhdl_file(self, loc, lib=lib)
+
 
     def add_package(self, name: Name, f_obj: FileObj):
         self._add_to_dict(self.package_name_2_file_obj, name, f_obj)
@@ -486,77 +502,24 @@ class LookupCommon(Lookup):
             raise KeyError(f"ERROR: confict on entity {name}")
 
 
-class LookupPrj(LookupCommon):
-    TOML_KEYS = ["common_toml", "top_file"]
+class LookupMulti(LookupSingular):
+    TOML_KEYS = ["sub_toml"]
 
     def __init__(
-        self, look_common: list[LookupCommon], file_list: list[tuple[str, Path]] = []
-    ):
-        self.look_common = look_common
+            self, look_subs: list[LookupSingular]): #, file_list: list[tuple[str, Path]] = [] ):
+        self.look_subs = look_subs
         super().__init__(allow_duplicates=False)
-        self.register_file_list(file_list)
         self.f_obj_top = None
         self._compile_order = None
 
     @staticmethod
     def create_from_config_dict(
-        config: dict, work_dir: Path, look_common=[]
+        config: dict, work_dir: Path, look_subs=[]
     ):
 
-        look = LookupPrj(look_common)
-        look.initalise_from_config_dict(config)
-        file_list = LookupCommon.get_file_list_from_config_dict(
-            config, work_dir
-        )
-
-        look.register_file_list(file_list)
-        if "top_file" in config:
-
-            l = []
-
-            def call_back_func(lib: str, loc_str: str):
-                n = (lib, loc_str)
-                if len(l) != 0:
-                    raise Exception(f"only supports one top_file got {l[0]} and {n}")
-                l.append(n)
-
-            LookupCommon._process_config_opt_lib(config, "top_file", call_back_func)
-
-            assert len(l) == 1
-
-            lib = l[0][0]
-            loc = Path(l[0][1])
-            look.set_top_file(loc, lib)
-
+        look = LookupMulti(look_subs)
+        look.initalise_from_config_dict(config, work_dir)
         return look
-
-    def set_top_file(self, loc: Path, lib=None):
-        self.f_obj_top = self.get_loc(loc, lib_to_add_to_if_not_found=lib)
-        self._compile_order = None
-
-    def has_top_file(self) -> bool:
-        return self.f_obj_top is not None
-
-    @property
-    def compile_order(self):
-        if self._compile_order is None:
-            if self.f_obj_top is None:
-                raise Exception(
-                    "top_file must be declared in config or on command line"
-                )
-
-            self._compile_order = self.f_obj_top.get_compile_order(look)
-        return self._compile_order
-
-    def print_compile_order(self):
-        print("compile order:")
-        for f_obj in self.compile_order:
-            print(f'\t{"|---"*f_obj.level}{f_obj.loc}')
-
-    def write_compile_order(self, compile_order_loc: Path):
-        with open(compile_order_loc, "w") as f_order:
-            for f_obj in self.compile_order:
-                f_order.write(f"{f_obj.lib} {f_obj.loc}\n")
 
     def register_file_list(
         self, file_list: list[tuple[str, Path]]
@@ -587,7 +550,7 @@ class LookupPrj(LookupCommon):
 
 
     def _get_loc_from_common(self, loc: Path) -> Optional[FileObj]:
-        for l_common in self.look_common:
+        for l_common in self.look_subs:
             if l_common.has_loc(loc):
                 return l_common.get_loc(loc)
         return None
@@ -606,18 +569,94 @@ class LookupPrj(LookupCommon):
 
     def get_package(self, name: Name) -> Optional[FileObj]:
         def cb(name: Name):
-            return LookupCommon.get_package(self, name)
+            return LookupSingular.get_package(self, name)
 
-        call_back_func_arr = [cb] + [l.get_package for l in self.look_common]
+        call_back_func_arr = [cb] + [l.get_package for l in self.look_subs]
         return self._get_named_item("package", name, call_back_func_arr)
 
     def get_entity(self, name: Name) -> Optional[FileObj]:
         def cb(name: Name):
-            return LookupCommon.get_entity(self, name)
+            return LookupSingular.get_entity(self, name)
 
-        call_back_func_arr = [cb] + [l.get_entity for l in self.look_common]
+        call_back_func_arr = [cb] + [l.get_entity for l in self.look_subs]
         return self._get_named_item("entity", name, call_back_func_arr)
 
+
+class LookupPrj(LookupMulti):
+    TOML_KEYS = ["top_file"]
+
+    def __init__(
+            self, look_subs: list[LookupMulti]) : #, file_list: list[tuple[str, Path]] = [] ):
+        super().__init__(look_subs)
+        self.f_obj_top = None
+        self._compile_order = None
+
+    @staticmethod
+    def create_from_config_dict(
+        config: dict, work_dir: Path, look_subs=[]
+    ):
+
+        look = LookupPrj(look_subs)
+        look.initalise_from_config_dict(config, work_dir)
+
+        if "top_file" in config:
+
+            l = []
+
+            def call_back_func(lib: str, loc_str: str):
+                loc_str = work_dir / loc_str
+                n = (lib, loc_str)
+                if len(l) != 0:
+                    raise Exception(f"only supports one top_file got {l[0]} and {n}")
+                l.append(n)
+
+            LookupSingular._process_config_opt_lib(config, "top_file", call_back_func)
+
+            assert len(l) == 1
+
+            lib = l[0][0]
+            loc = Path(l[0][1])
+            look.set_top_file(loc, lib)
+
+        return look
+
+    def set_top_file(self, loc: Path, lib=None):
+        self.f_obj_top = self.get_loc(loc, lib_to_add_to_if_not_found=lib)
+        self._compile_order = None
+
+    def has_top_file(self) -> bool:
+        return self.f_obj_top is not None
+
+    @property
+    def compile_order(self):
+        if self._compile_order is None:
+            if self.f_obj_top is None:
+                raise Exception(
+                    "top_file must be declared in config or on command line"
+                )
+
+            self._compile_order = self.f_obj_top.get_compile_order(look)
+        return self._compile_order
+
+    def print_compile_order(self):
+        print("compile order:")
+        for f_obj in self.compile_order:
+            print(f'\t{"|---"*f_obj.level}{f_obj.lib}:{f_obj.loc}')
+
+    def write_compile_order(self, compile_order_loc: Path):
+        with open(compile_order_loc, "w") as f_order:
+            for f_obj in self.compile_order:
+                f_order.write(f"{f_obj.lib} {f_obj.loc}\n")
+
+    def write_compile_order_lib(self, compile_order_loc: Path, lib:str):
+        lines = 0
+        with open(compile_order_loc, "w") as f_order:
+            for f_obj in self.compile_order:
+                if lib == f_obj.lib:
+                    f_order.write(f"{f_obj.loc}\n")
+                    lines += 1
+        if lines == 0:
+            log.warning(f'not files found for libarary {lib}')
 
 # Function to find matches in the VHDL code
 def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work"):
@@ -688,8 +727,9 @@ def issue_key(good_keys: list, keys: list) -> Optional[str]:
 
 
 def create_lookup_from_toml(
-    toml_loc: Path, work_dir: Optional[Path] = None
+    toml_loc: Path, work_dir: Optional[Path] = None, attemp_read_pickle = True, write_pickle = True, force_LookupPrj=False
 ):
+    log.debug(f'toml_loc {toml_loc} , work_dir {work_dir}, attemp_read_pickle {attemp_read_pickle}, write_pickle {write_pickle}, force_LookupPrj {force_LookupPrj}')
     if not toml_loc.is_file():
         if toml_loc.is_absolute() or work_dir is None:
             raise FileNotFoundError(f"ERROR could not find file {toml_loc}")
@@ -697,59 +737,94 @@ def create_lookup_from_toml(
         temp_dir = work_dir
         test = temp_dir / toml_loc
         while not test.is_file():
+            print(f'temp_dir {temp_dir}')
             temp_dir = temp_dir.parents[0]
             test = temp_dir / toml_loc
             if test == Path("/"):
                 raise FileNotFoundError(f"ERROR could not find file {toml_loc}")
         toml_loc = test
+
+
+    pickle_loc = LookupSingular.toml_loc_to_pickle_loc(toml_loc)
+
     with open(toml_loc, "rb") as toml_f:
         config = tomllib.load(toml_f)
-    work_dir = toml_loc.parents[0]
-    picke_loc = LookupCommon.toml_loc_to_pickle_loc(toml_loc)
 
-    error_key = issue_key(LookupPrj.TOML_KEYS + LookupCommon.TOML_KEYS, config.keys())
+    work_dir = toml_loc.parents[0]
+
+    look_subs = []
+    if "sub_toml" in config:
+        c_locs = config["sub_toml"]
+        c_locs = make_list(c_locs)
+        for loc in c_locs:
+            loc = Path(loc)
+            look_subs.append(
+                create_lookup_from_toml(loc, work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle)
+            )
+
+        # log.info(f"create LookupPrj from {toml_loc}")
+        # return LookupPrj.create_from_config_dict(
+        #     config, work_dir=work_dir, look_subs=look_subs
+        # )
+
+    if attemp_read_pickle:
+        inst = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc)
+        if inst is not None:
+            inst.look_subs = look_subs
+            return inst
+
+    # picke_loc = LookupSingular.toml_loc_to_pickle_loc(toml_loc)
+
+    error_key = issue_key(LookupPrj.TOML_KEYS + LookupMulti.TOML_KEYS + LookupSingular.TOML_KEYS, config.keys())
     if error_key is not None:
         raise KeyError(f"Got unexpected key {error_key} in file {toml_loc}")
 
-    work_dir = toml_loc.parents[0]
 
-    if contains_any(config.keys(), LookupPrj.TOML_KEYS):
-        look_common = []
-
-        if "common_toml" in config:
-            c_locs = config["common_toml"]
-            c_locs = make_list(c_locs)
-            for loc in c_locs:
-                loc = Path(loc)
-                look_common.append(
-                    create_lookup_from_toml(loc, work_dir)
-                )
+    if force_LookupPrj or contains_any(config.keys(), LookupPrj.TOML_KEYS):
 
         log.info(f"create LookupPrj from {toml_loc}")
-        return LookupPrj.create_from_config_dict(
-            config, work_dir=work_dir, look_common=look_common
-        )
-    log.info(f"create LookupCommon from {toml_loc}")
-    pickle_loc = LookupCommon.toml_loc_to_pickle_loc(toml_loc)
-
-    inst = LookupCommon.atempt_to_load_from_pickle(pickle_loc, toml_loc)
-    if inst is not None:
-        return inst
-
-    log.info(f"loading from {toml_loc}")
-    with open(toml_loc, "rb") as toml_f:
-        config = tomllib.load(toml_f)
-        inst = LookupCommon.create_from_config_dict(
-            config, work_dir=work_dir
+        inst = LookupPrj.create_from_config_dict(
+            config, work_dir=work_dir, look_subs=look_subs
         )
 
+    elif contains_any(config.keys(), LookupMulti.TOML_KEYS):
+
+        log.info(f"create LookupMulti from {toml_loc}")
+        inst = LookupMulti.create_from_config_dict(
+            config, work_dir=work_dir, look_subs=look_subs
+        )
+
+    else :
+        log.info(f"create LookupSingular from {toml_loc}")
+
+        with open(toml_loc, "rb") as toml_f:
+            config = tomllib.load(toml_f)
+            inst = LookupSingular.create_from_config_dict(
+                config, work_dir=work_dir
+            )
+
+    print(f'toml_loc {toml_loc}')
     inst.toml_modification_time = get_file_modification_time(toml_loc)
-    inst.save_to_pickle(pickle_loc)
+
+    if write_pickle:
+        look_subs = None
+        if hasattr(inst, 'look_subs'):
+            look_subs = inst.look_subs
+        inst.save_to_pickle(pickle_loc)
+        if look_subs is not None:
+            inst.look_subs = look_subs
     return inst
 
 
 # Use match statement to handle different constructs
 
+def extract_lib_compiler_order(s)-> tuple[str, str]:
+    try:
+        lib, f = s.split(':')
+        return lib, f
+    except:
+        print(f's = {s}')
+        raise argparse.ArgumentTypeError("--compile-order-lib expects tuples of lib:path")
 
 def set_log_level_from_verbose(args):
     global log_level
@@ -762,7 +837,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "-v", "--verbose", action="count", help="verbose level... repeat up to two times"
     )
-    # parser.add_argument("-c", "--clear-cache", action="store_true", help="Delete pickle cache files first.") #TODO
+    parser.add_argument("-c", "--clear-pickle", action="store_true", help="Delete pickle cache files first.")
+    parser.add_argument("--no-pickle", action="store_true", help="No not write or read any pickle caches") 
     parser.add_argument(
         "config_toml",
         nargs="+",  # Allows one or more files
@@ -773,7 +849,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--compile-order", type=str, help="Path to the compile order output file."
     )
-    # parser.add_argument("-d", "--file-dependencies", type=str, help="Path to the file to print the immidiate dependencies for")
+    parser.add_argument(
+        "--compile-order-lib", nargs ="+", type=extract_lib_compiler_order, help="expects 'lib:file' where 'file' is where to write the compile order of libary 'lib'."
+    )
 
     args = parser.parse_args()
 
@@ -781,21 +859,28 @@ if __name__ == "__main__":
 
     # Example usage
     # print("Clear Cache:", args.clear_cache)
-    log.debug("Config TOML:", args.config_toml)
+    log.debug("Config TOML:", args.config_toml,', len = ',len(args.config_toml))
     log.debug("Compile Order:", args.compile_order)
+    log.debug("do not read pickles", args.clear_pickle)
+    log.debug("no pickle", args.no_pickle)
     # print("File Dependencies:", args.file_dependencies)
 
+    attemp_read_pickle = not args.clear_pickle and not args.no_pickle
+    write_pickle = not args.no_pickle
     if len(args.config_toml) == 1:
-        look = create_lookup_from_toml(Path(args.config_toml[0]))
+        log.debug('creating top level project toml')
+        look = create_lookup_from_toml(Path(args.config_toml[0]), 
+           force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle
+       )
     else:
-        look_common = []
-        for c_toml in common_toml:
-            look_common.append(
+        look_subs = []
+        for c_toml in look_subs:
+            look_subs.append(
                 create_lookup_from_toml(
-                    Path(c_toml), work_dir=work_dir
+                    Path(c_toml), work_dir=work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle
                 )
             )
-        look = LookupPrj(look_common)
+        look = LookupPrj(look_subs)
 
     if args.top_file:
         look.set_top_file(Path(args.top_file), "work")
@@ -805,4 +890,8 @@ if __name__ == "__main__":
 
     if args.compile_order is not None:
         look.write_compile_order(Path(args.compile_order))
+    if args.compile_order_lib is not None:
+        for lib, f in args.compile_order_lib:
+            look.write_compile_order_lib(Path(f), lib)
+            
 
