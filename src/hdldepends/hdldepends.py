@@ -1,6 +1,7 @@
 import re
 import sys
 import pickle
+import hashlib
 
 # try:
 import tomllib
@@ -35,7 +36,7 @@ class log:
 
 regex_patterns = {
     "package_decl": re.compile(
-        r"^(?!\s*--)\s*package\s+(\w+)\s+is.*?end\s+(?:package",
+        r"^(?!\s*--)\s*package\s+(\w+)\s+is.*?end\s+(?:package|\1)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
@@ -43,7 +44,7 @@ regex_patterns = {
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_decl": re.compile(
-        r"^(?!\s*--)\s*component\s+(\w+)\s+is.*?end\s+component",
+        r"^(?!\s*--)\s*component\s+(\w+)\s+is.*?end\s+(?:component|\1)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_inst": re.compile(
@@ -95,6 +96,10 @@ def path_from_dir(dir: Path, loc: Path):
 def get_file_modification_time(f: Path) -> int:
     return f.lstat().st_mtime
 
+def get_file_md5sum(f : Path) -> int:
+    with open(f, 'rb') as f_read:
+        data = f_read.read()
+        return hashlib.md5(data).digest()
 
 
 def str_to_name(s: str):
@@ -273,7 +278,7 @@ class LookupSingular(Lookup):
         self.ignore_set_entities: set[Name] = set()
         self.toml_loc: Optional[Path] = None
         self.toml_modification_time = None
-        self.dependency_files_modification_time : dict [Path : int ] = {}
+        self.dependency_files_md5sum : dict [Path : int ] = {}
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
         log.info(f'Adding {key} to dict')
@@ -313,13 +318,13 @@ class LookupSingular(Lookup):
                 log.info(f"will not load from pickle as {toml_loc} out of date")
 
             if not out_of_date:
-                for f, mod_time in inst.dependency_files_modification_time.items():
+                for f, md5 in inst.dependency_files_md5sum.items():
                     try:
-                        out_of_date = mod_time != get_file_modification_time(f)
+                        out_of_date = md5 != get_file_md5sum(f)
                     except FileNotFoundError:
                         out_of_date = True
                     if out_of_date:
-                        log.info(f"will not load from pickle as {f} out of date")
+                        log.info(f"will not load from pickle as {f} md5sum out of date")
                         break
                    
             if not out_of_date:
@@ -436,7 +441,7 @@ class LookupSingular(Lookup):
                     loc_str = loc_str.strip()
                     loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
                     file_list.append((lib, loc))
-            self.dependency_files_modification_time[fl_loc.resolve()] = get_file_modification_time(fl_loc)
+            self.dependency_files_md5sum[fl_loc.resolve()] = get_file_md5sum(fl_loc)
 
         LookupSingular._process_config_opt_lib(
             config, "file_list_files", add_file_list_to_list
@@ -458,7 +463,7 @@ class LookupSingular(Lookup):
                     self.entity_name_2_file_obj[entity_name] = f_obj
                     self.loc_2_file_obj[loc] = f_obj
                     
-            self.dependency_files_modification_time[fl_loc] = get_file_modification_time(fl_loc)
+            self.dependency_files_md5sum[fl_loc] = get_file_md5sum(fl_loc)
 
         # "extern_deps", #TODO
         LookupSingular._process_config_opt_lib(config, "extern_deps_file", add_ext_dep_file_to_list)
