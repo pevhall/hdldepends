@@ -35,11 +35,11 @@ class log:
 
 regex_patterns = {
     "package_decl": re.compile(
-        r"^(?!\s*--)\s*package\s+(\w+)\s+is.*?end\s+package",
+        r"^(?!\s*--)\s*package\s+(\w+)\s+is.*?end\s+(?:package",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
-        r"^(?!\s*--)\s*entity\s+(\w+)\s+is.*?end\s+entity",
+        r"^(?!\s*--)\s*entity\s+(\w+)\s+is.*?end\s+(?:entity|\1)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_decl": re.compile(
@@ -183,7 +183,7 @@ class FileObj:
         """Returns True if the dependencies have changed, Returns True if file was modified"""
         if self.requires_update():
             f_obj = parse_vhdl_file(None, self.loc, self.lib)
-            if self == f_obj:
+            if f_obj.equivalent(self) :
                 log.info(f'file {self.loc} updated but dependencies remain unchanaged')
                 self.modification_time = f_obj.modification_time
                 return False, True
@@ -198,19 +198,16 @@ class FileObj:
         self.__dict__.update(f_obj.__dict__) #this didn't work
 
 
-    def __eq__(self, other : "FileObj"):
-        return (self.loc      == other.loc
+    def equivalent(self, other : "FileObj"):
+
+        result = (self.loc      == other.loc
             and self.lib      == other.lib
             and self.packages == other.packages
             and self.entities == other.entities
             and self.package_deps == other.package_deps
             and self.entity_deps == other.entity_deps)
             #modificaiton time and level are not checked
-
-        if self.lib != self.lib:
-            return False
-        if self.lib != self.lib:
-            return False
+        return result
 
 
 
