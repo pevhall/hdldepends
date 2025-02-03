@@ -317,7 +317,10 @@ class LookupSingular(Lookup):
 
             if not out_of_date:
                 for f, mod_time in inst.dependency_files_modification_time.items():
-                    out_of_date = mod_time != get_file_modification_time(f)
+                    try:
+                        out_of_date = mod_time != get_file_modification_time(f)
+                    except FileNotFoundError:
+                        out_of_date = True
                     if out_of_date:
                         log.info(f"will not load from pickle as {f} out of date")
                         break
@@ -436,7 +439,7 @@ class LookupSingular(Lookup):
                     loc_str = loc_str.strip()
                     loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
                     file_list.append((lib, loc))
-            self.dependency_files_modification_time[fl_loc] = get_file_modification_time(fl_loc)
+            self.dependency_files_modification_time[fl_loc.resolve()] = get_file_modification_time(fl_loc)
 
         LookupSingular._process_config_opt_lib(
             config, "file_list_files", add_file_list_to_list
@@ -708,6 +711,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work"):
                         log.info(f"\tentity_decl: {name}")
                 case "component_decl":
                     for item in found:
+                        name = Name(lib, item)
                         log.info(f"\tcomponent_decl: {name}")
                 case "component_inst":
                     for item in found:
@@ -754,11 +758,18 @@ def create_lookup_from_toml(
     toml_loc: Path, work_dir: Optional[Path] = None, attemp_read_pickle = True, write_pickle = True, force_LookupPrj=False
 ):
     log.debug(f'toml_loc {toml_loc} , work_dir {work_dir}, attemp_read_pickle {attemp_read_pickle}, write_pickle {write_pickle}, force_LookupPrj {force_LookupPrj}')
+    if toml_loc.suffix != '.toml':
+        if len(toml_loc.suffix) == 0:
+            log.info('f adding .toml suffix/extension to {toml_loc}')
+            toml_loc = toml_loc.with_suffix('.toml')
+        else:
+            raise Exception(f'{toml_loc} expected suffix .toml but got {toml_lox.suffix}')
+        
     if not toml_loc.is_file():
         if toml_loc.is_absolute() or work_dir is None:
             raise FileNotFoundError(f"ERROR could not find file {toml_loc}")
         log.info(f"tring to find {toml_loc} in previouse directoires")
-        temp_dir = work_dir
+        temp_dir = work_dir.resolve()
         test = temp_dir / toml_loc
         while not test.is_file():
             print(f'temp_dir {temp_dir}')
@@ -888,12 +899,13 @@ if __name__ == "__main__":
     log.debug("do not read pickles", args.clear_pickle)
     log.debug("no pickle", args.no_pickle)
     # print("File Dependencies:", args.file_dependencies)
+    work_dir=Path('.')
 
     attemp_read_pickle = not args.clear_pickle and not args.no_pickle
     write_pickle = not args.no_pickle
     if len(args.config_toml) == 1:
         log.debug('creating top level project toml')
-        look = create_lookup_from_toml(Path(args.config_toml[0]), 
+        look = create_lookup_from_toml(Path(args.config_toml[0]), work_dir=work_dir,
            force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle
        )
     else:
