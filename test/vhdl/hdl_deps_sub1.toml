@@ -1,5 +1,6 @@
 
-sub_toml ='hdl_deps_sub2.toml'
+ignore_libs = 'xpm'
+sub ='hdl_deps_sub2.toml'
 file_list_files = './fw_files1.txt'
 
 

@@ -4,6 +4,7 @@ import pickle
 import hashlib
 
 # try:
+import json
 import tomllib
 # except ModuleNotFoundError:
 #     import pip._vendor.tomli as tomllib
@@ -44,7 +45,7 @@ regex_patterns = {
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_decl": re.compile(
-        r"^(?!\s*--)\s*component\s+(\w+)\s+is.*?end\s+(?:component|\1)",
+        r"^(?!\s*--)\s*component\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_inst": re.compile(
@@ -130,6 +131,8 @@ class FileObj:
         self.lib = lib
         self.packages: list[Name] = []
         self.entities: list[Name] = []
+        self.component_decl: list[str] = []
+        self.component_deps: list[str] = []
         self.package_deps: list[Name] = []
         self.entity_deps: list[Name] = []
         self.level = None
@@ -151,13 +154,8 @@ class FileObj:
         if f_obj not in file_deps:
             file_deps.append(f_obj)
 
-    def get_file_deps(self, look: Lookup):
-        file_deps = []
-
-        for p in self.package_deps:
-            f_obj = look.get_package(p, self)
-            if f_obj is not None:
-                self._add_to_f_deps(file_deps, f_obj)
+    def get_file_deps(self, look: Lookup) -> list["FileObj"]:
+        file_deps = self.get_package_deps(look)
 
         for e in self.entity_deps:
             f_obj = look.get_entity(e, self)
@@ -166,13 +164,24 @@ class FileObj:
 
         return file_deps
 
+    def get_package_deps(self, look : Lookup) -> list["FileObj"]:
+        file_deps = []
+
+        for p in self.package_deps:
+            f_obj = look.get_package(p, self)
+            if f_obj is not None:
+                self._add_to_f_deps(file_deps, f_obj)
+        return file_deps
+
     def get_compile_order(self, look: Lookup) -> list["FileObj"]:
         return self._get_compile_order(look)
 
     def _get_compile_order(
-        self, look: Lookup, files_passed=[], level=0
+        self, look: Lookup, files_passed=[], components_missed=[], level=0
     ) -> list["FileObj"]:
         files_passed.append(self)
+        if self.loc in look.files_2_skip_from_order:
+            return []
         # top_lib = look.get_top_lib()
         # if top_lib is not None:
         #     if top_lib == self.lib:
@@ -180,7 +189,22 @@ class FileObj:
         order: list["FileObj"] = []
         for f_obj in self.get_file_deps(look):
             if f_obj not in files_passed:
-                order += f_obj._get_compile_order(look, files_passed, level + 1)
+                order += f_obj._get_compile_order(look, files_passed, components_missed, level + 1)
+        if len(self.component_deps) > 0:
+            file_package_deps = self.get_package_deps(look)
+            for component in self.component_deps:
+                if component in look.ignore_components:
+                    continue
+                found = False
+                for f_obj in file_package_deps:
+                    if component in f_obj.component_decl:
+                        found = True
+                        break
+                if not found:
+                    if component not in components_missed:
+                        log.warning(f'File {self.loc} cannot find component declartion for component dependency {component}')
+                        components_missed.append(component)
+
         order.append(self)
         self.level = level
         return order
@@ -267,6 +291,8 @@ class LookupSingular(Lookup):
         "ignore_libs",
         "ignore_packages",
         "ignore_entities",
+        "ignore_components",
+        "package_file_skip_order",
         "files",
         "file_list_files",
 #        "extern_deps",
@@ -286,6 +312,8 @@ class LookupSingular(Lookup):
         self.toml_modification_time = None
         self.dependency_files_md5sum : dict [Path : int ] = {}
         self.top_lib : Optional[str] = None
+        self.ignore_components : set[str] = set()
+        self.files_2_skip_from_order : set[Path] = set()
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
         log.info(f'Adding {key} to dict')
@@ -427,6 +455,9 @@ class LookupSingular(Lookup):
         self.ignore_set_entities = LookupSingular.extract_set_name_from_config(
             config, "ignore_entities", top_lib=top_lib
         )
+        if 'ignore_components' in config:
+            self.ignore_components = make_set(config['ignore_components'])
+
         file_list = self.get_file_list_from_config_dict(
             config, work_dir, top_lib
         )
@@ -447,6 +478,15 @@ class LookupSingular(Lookup):
 
         LookupSingular._process_config_opt_lib(config, "files", add_file_to_list)
 
+        def add_file_to_list_skip_order(lib, loc_str):
+            if top_lib is not None and lib == 'work':
+                lib = top_lib;
+            loc = path_from_dir(work_dir, Path(loc_str))
+            self.files_2_skip_from_order.add(loc)
+            file_list.append((lib, loc))
+        LookupSingular._process_config_opt_lib(config, "package_file_skip_order", add_file_to_list_skip_order)
+        
+
         def add_file_list_to_list(lib, f_str):
             if top_lib is not None and lib == 'work':
                 lib = top_lib;
@@ -463,9 +503,8 @@ class LookupSingular(Lookup):
             config, "file_list_files", add_file_list_to_list
         )
 
-        print('tetes')
-        for lib, f in file_list:
-            print(f'{lib, f}')
+        # for lib, f in file_list:
+        #     print(f'{lib, f}')
 
         return file_list
         
@@ -565,7 +604,7 @@ class LookupSingular(Lookup):
         self.top_lib = top_lib
 
 class LookupMulti(LookupSingular):
-    TOML_KEYS = ["sub_toml"]
+    TOML_KEYS = ["sub"]
 
     def __init__(
             self, look_subs: list[LookupSingular]): #, file_list: list[tuple[str, Path]] = [] ):
@@ -768,13 +807,14 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work"):
                         log.info(f"\tentity_decl: {name}")
                 case "component_decl":
                     for item in found:
-                        name = Name(lib, item)
-                        log.info(f"\tcomponent_decl: {name}")
+                        component = item
+                        log.info(f"\tcomponent_decl: {component}")
+                        f_obj.component_decl.append(component)
                 case "component_inst":
                     for item in found:
-                        name = Name(lib, item[1])
-                        f_obj.entity_deps.append(name)
-                        log.info(f"\tcomponent_inst: {name}")  # Extract component name
+                        component = item[1]
+                        f_obj.component_deps.append(component)
+                        log.info(f"\tcomponent_inst: {component}")  # Extract component name
                 case "direct_inst":
                     for item in found:
                         l = item[1]
@@ -820,13 +860,16 @@ def issue_key(good_keys: list, keys: list) -> Optional[str]:
 def create_lookup_from_toml(
     toml_loc: Path, work_dir: Optional[Path] = None, attemp_read_pickle = True, write_pickle = True, force_LookupPrj=False, top_lib : Optional[str]= None
 ):
-    log.debug(f'toml_loc {toml_loc} , work_dir {work_dir}, attemp_read_pickle {attemp_read_pickle}, write_pickle {write_pickle}, force_LookupPrj {force_LookupPrj}, top_lib {top_lib}')
-    if toml_loc.suffix != '.toml':
+    log.debug(f'config loc {toml_loc} , work_dir {work_dir}, attemp_read_pickle {attemp_read_pickle}, write_pickle {write_pickle}, force_LookupPrj {force_LookupPrj}, top_lib {top_lib}')
+
+    is_json = toml_loc.suffix == '.json'
+
+    if not is_json and toml_loc.suffix != '.toml':
         if len(toml_loc.suffix) == 0:
             log.info('f adding .toml suffix/extension to {toml_loc}')
             toml_loc = toml_loc.with_suffix('.toml')
         else:
-            raise Exception(f'{toml_loc} expected suffix .toml but got {toml_lox.suffix}')
+            raise Exception(f'{toml_loc} expected suffix .toml or .json but got {toml_lox.suffix}')
         
     if not toml_loc.is_file():
         if toml_loc.is_absolute() or work_dir is None:
@@ -846,13 +889,16 @@ def create_lookup_from_toml(
     pickle_loc = LookupSingular.toml_loc_to_pickle_loc(toml_loc)
 
     with open(toml_loc, "rb") as toml_f:
-        config = tomllib.load(toml_f)
+        if is_json:
+            config = json.load(toml_f)
+        else:
+            config = tomllib.load(toml_f)
 
     work_dir = toml_loc.parents[0]
 
     look_subs = []
-    if "sub_toml" in config:
-        c_locs = config["sub_toml"]
+    if "sub" in config:
+        c_locs = config["sub"]
         c_locs = make_list(c_locs)
         for loc in c_locs:
             loc = Path(loc)
@@ -893,13 +939,9 @@ def create_lookup_from_toml(
         )
 
     else :
-        log.info(f"create LookupSingular from {toml_loc}")
-
-        with open(toml_loc, "rb") as toml_f:
-            config = tomllib.load(toml_f)
-            inst = LookupSingular.create_from_config_dict(
-                config, work_dir=work_dir, top_lib=top_lib
-            )
+        inst = LookupSingular.create_from_config_dict(
+            config, work_dir=work_dir, top_lib=top_lib
+        )
 
     print(f'toml_loc {toml_loc}')
     inst.toml_modification_time = get_file_modification_time(toml_loc)

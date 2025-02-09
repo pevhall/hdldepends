@@ -2,6 +2,9 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+library xpm;
+use xpm.vcomponents.all;
+
 use std.textio.all;
 
 
@@ -91,7 +94,28 @@ end process;
     sdf_i    => sdf_i,
     tedast_i => tedast_i
   );
+ 
+i_xpm_cdc_async_rst : xpm_cdc_async_rst
+  generic map(
 
+    -- Common module parameters
+    DEST_SYNC_FF    => 4,
+    INIT_SYNC_FF    => 0,
+    RST_ACTIVE_HIGH => 0
+  )
+  port map(
 
+    src_arst  => open,
+    dest_clk  => open,
+    dest_arst => open
+  ); 
+
+----- component xpm_cdc_sync_rst -----
+component xpm_cdc_sync_rst
+  port map(
+    src_arst  => open,
+    dest_clk  => open,
+    dest_arst => open
+  );
 end architecture;
 
