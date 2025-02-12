@@ -1,6 +1,6 @@
 
+pre_cmds = 'bash test.sh'
 ignore_libs = [ 'ieee', 'std' ]
 file_list_files = './fw_files2.txt'
-top_lib = 'default_lib'
 
 

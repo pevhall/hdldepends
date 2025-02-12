@@ -9,6 +9,7 @@ import tomllib
 # except ModuleNotFoundError:
 #     import pip._vendor.tomli as tomllib
 import argparse
+import subprocess
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Union
@@ -182,10 +183,6 @@ class FileObj:
         files_passed.append(self)
         if self.loc in look.files_2_skip_from_order:
             return []
-        # top_lib = look.get_top_lib()
-        # if top_lib is not None:
-        #     if top_lib == self.lib:
-        #         self.lib = top_lib
         order: list["FileObj"] = []
         for f_obj in self.get_file_deps(look):
             if f_obj not in files_passed:
@@ -287,7 +284,7 @@ def make_set(v) -> set:
 
 class LookupSingular(Lookup):
     TOML_KEYS = [
-        "top_lib",
+        "pre_cmds",
         "ignore_libs",
         "ignore_packages",
         "ignore_entities",
@@ -298,9 +295,11 @@ class LookupSingular(Lookup):
 #        "extern_deps",
         "extern_deps_file",
     ]
+    VERSION = 1
 
     def __init__(self, allow_duplicates: bool = True):
         log.debug('LookupSingular::__init__')
+        self.version = LookupSingular.VERSION
         self.allow_duplicates = allow_duplicates
         self.package_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.entity_name_2_file_obj: dict[Name, FileObjLookup] = {}
@@ -337,41 +336,48 @@ class LookupSingular(Lookup):
 
     @staticmethod
     def atempt_to_load_from_pickle(
-            pickle_loc: Path, toml_loc: Path
+            pickle_loc: Path, toml_loc: Path, top_lib : Optional[str]
     ) -> Optional[object]:
         assert toml_loc.is_file()
-        if pickle_loc.is_file():
-            log.info(f"atempting to load cache from {pickle_loc}")
-            pickle_mod_time = get_file_modification_time(pickle_loc)
-            with open(pickle_loc, "rb") as pickle_f:
-                inst = pickle.load(pickle_f)
-            # time_diff = pickle_mod_time - inst.toml_modification_time
+        if not pickle_loc.is_file():
+            log.debug('will not load from pickle no file at {pickle_loc}')
+            return None
+        log.info(f"atempting to load cache from {pickle_loc}")
+        pickle_mod_time = get_file_modification_time(pickle_loc)
+
+        with open(pickle_loc, "rb") as pickle_f:
+            inst = pickle.load(pickle_f)
+
+            if LookupSingular.VERSION != inst.version:
+                log.info(f'hdldepends version { LookupSingular.VERSION} but pickle top_lib {inst.version} will not load from pickle')
+                return None
 
             toml_modification_time = get_file_modification_time(toml_loc)
-            out_of_date = toml_modification_time != inst.toml_modification_time
-            if out_of_date:
+            if toml_modification_time != inst.toml_modification_time:
                 log.info(f"will not load from pickle as {toml_loc} out of date")
+                return None
 
-            if not out_of_date:
-                for f, md5 in inst.dependency_files_md5sum.items():
-                    try:
-                        out_of_date = md5 != get_file_md5sum(f)
-                    except FileNotFoundError:
-                        out_of_date = True
-                    if out_of_date:
-                        log.info(f"will not load from pickle as {f} md5sum out of date")
-                        break
+            if top_lib != inst.top_lib:
+                log.info(f'requested top_lib {top_lib} but pickle top_lib {inst.top_lib} will not load from pickle')
+                return None
+
+            for f, md5 in inst.dependency_files_md5sum.items():
+                try:
+                    out_of_date = md5 != get_file_md5sum(f)
+                except FileNotFoundError:
+                    log.info(f"will not load from pickle as {f} not found")
+                    return None
+                if out_of_date:
+                    log.info(f"will not load from pickle as {f} md5sum out of date")
+                    return None
                    
-            if not out_of_date:
-                log.info(f"loaded from {pickle_loc}, updating required files")
-                any_changes = inst.check_for_src_files_updates()
-                if any_changes:
-                    log.info(f"Updating pickle wtih the changes detected on disk")
-                    inst.save_to_pickle(pickle_loc)
-        
-                return inst
-            log.info(f"{pickle_loc} out of date")
-        return None
+            log.info(f"loaded from {pickle_loc}, updating required files")
+            any_changes = inst.check_for_src_files_updates()
+            if any_changes:
+                log.info(f"Updating pickle wtih the changes detected on disk")
+                inst.save_to_pickle(pickle_loc)
+            return inst
+        log.info(f"{pickle_loc} out of date")
 
     def save_to_pickle(self, pickle_loc: Path):
         log.info(f"Caching to {pickle_loc}")
@@ -430,7 +436,7 @@ class LookupSingular(Lookup):
         return result
 
     def extract_set_name_from_config(
-        config: dict, key: str, top_lib = Optional[str]
+        config: dict, key: str, top_lib : Optional[str]
     ) -> set[Name]:
         l = []
 
@@ -444,6 +450,7 @@ class LookupSingular(Lookup):
         return set(l)
 
     def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str]):
+
         if 'top_lib' in config:
             self.top_lib = config['top_lib']
         self.ignore_set_libs = LookupSingular.extract_set_str_from_config(
@@ -491,13 +498,13 @@ class LookupSingular(Lookup):
             if top_lib is not None and lib == 'work':
                 lib = top_lib;
             fl_loc = Path(f_str)
-            fl_loc = path_from_dir(work_dir, fl_loc)
+            fl_loc = path_from_dir(work_dir, fl_loc).resolve()
             with open(fl_loc, "r") as f_list_file:
                 for loc_str in f_list_file:
                     loc_str = loc_str.strip()
                     loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
                     file_list.append((lib, loc))
-            self.dependency_files_md5sum[fl_loc.resolve()] = get_file_md5sum(fl_loc)
+            self.dependency_files_md5sum[fl_loc] = get_file_md5sum(fl_loc)
 
         LookupSingular._process_config_opt_lib(
             config, "file_list_files", add_file_list_to_list
@@ -513,7 +520,7 @@ class LookupSingular(Lookup):
             if top_lib is not None and lib == 'work':
                 lib = top_lib;
             fl_loc = Path(f_str)
-            fl_loc = path_from_dir(work_dir, fl_loc)
+            fl_loc = path_from_dir(work_dir, fl_loc).resolve()
             with open(fl_loc, "r") as f_list_file:
                 for loc_str in f_list_file:
                     loc_str = loc_str.strip()
@@ -911,8 +918,15 @@ def create_lookup_from_toml(
         #     config, work_dir=work_dir, look_subs=look_subs
         # )
 
+    if 'pre_cmds' in config:
+        print(f'pre_cmds')
+        for cmd in make_list(config['pre_cmds']):
+            print(f'cmd {cmd}')
+            subprocess.check_output(cmd, shell=True, cwd=work_dir)
+
+
     if attemp_read_pickle:
-        inst = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc)
+        inst = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
         if inst is not None:
             inst.look_subs = look_subs
             return inst
@@ -922,7 +936,6 @@ def create_lookup_from_toml(
     error_key = issue_key(LookupPrj.TOML_KEYS + LookupMulti.TOML_KEYS + LookupSingular.TOML_KEYS, config.keys())
     if error_key is not None:
         raise KeyError(f"Got unexpected key {error_key} in file {toml_loc}")
-
 
     if force_LookupPrj or contains_any(config.keys(), LookupPrj.TOML_KEYS):
 
