@@ -81,8 +81,11 @@ This is the top level file to create the compile order from. You can use the com
 
 This tag accepts a single value.
 
-# Command like Options
+# Command line
 Below are the command line options for the `hdldepnds.py` command line program
+
+## Options
+Command line flag options
 
 ### `-h` `--help`
 Print help message and exit
@@ -100,7 +103,7 @@ Do not load anything from a pickle cache
 Do not load anything from a pickle cache and do not write any pickle caches
 
 ### `--top-file`
-The top file command line option specifies the project's top level file to create the compile order from.
+The top file command line option specifies the project's top level file to create the compile order from. This works the same as the configuration file key `top_file`.
 
 ### `--top-lib`
 This is a bit of a hack. It will give the `work` library the passed name.
@@ -115,3 +118,10 @@ The compile order command line option accepts a location to a file not yet creat
 ### `--compile-order-lib`
 The compile order library option exports the compile order for one particular library. The option accepts *lib:file* where lib is the library to export and file is the location to export the compile order. Each line of the created file will contain the absolute path to a file.
  
+## Positional Arguments
+This program has only one positional argument.
+
+### `config_file`
+This can be a direct path to the project configuration file or just the file name. If only the file name is specified the program will look in parent directories for the file.
+
+More then one configuration file can be specified. If more then one file is specified use the `--top-lib` command line option and not `top_file` configuration file key.

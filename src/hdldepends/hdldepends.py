@@ -993,7 +993,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--clear-pickle", action="store_true", help="Delete pickle cache files first.")
     parser.add_argument("--no-pickle", action="store_true", help="No not write or read any pickle caches") 
     parser.add_argument(
-        "config_toml",
+        "config_file",
         nargs="+",  # Allows one or more files
         type=str,
         help="Paths to / File Names of, the config TOML input file(s).",
@@ -1013,7 +1013,7 @@ if __name__ == "__main__":
 
     # Example usage
     # print("Clear Cache:", args.clear_cache)
-    log.debug("Config TOML:", args.config_toml,', len = ',len(args.config_toml))
+    log.debug("Config TOML:", args.config_file,', len = ',len(args.config_file))
     log.debug("Compile Order:", args.compile_order)
     log.debug("do not read pickles", args.clear_pickle)
     log.debug("no pickle", args.no_pickle)
@@ -1025,9 +1025,9 @@ if __name__ == "__main__":
 
     attemp_read_pickle = not args.clear_pickle and not args.no_pickle
     write_pickle = not args.no_pickle
-    if len(args.config_toml) == 1:
+    if len(args.config_file) == 1:
         log.debug('creating top level project toml')
-        look = create_lookup_from_toml(Path(args.config_toml[0]), work_dir=work_dir,
+        look = create_lookup_from_toml(Path(args.config_file[0]), work_dir=work_dir,
            force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
        )
     else:
