@@ -1,5 +1,6 @@
 import re
 import sys
+import glob
 import pickle
 import hashlib
 
@@ -62,6 +63,51 @@ regex_patterns = {
     ),
     }
 
+def process_glob_patterns(patterns: list[str], base_path: str = ".") -> list[Path]:
+    """
+    Process a list of glob patterns, including exclusion patterns (starting with '!'),
+    to generate a filtered list of file paths.
+    
+    Args:
+        patterns (list[str]): List of glob patterns. Patterns starting with '!' are exclusions.
+        base_path (str): Base directory to start glob searches from. Defaults to current directory.
+    
+    Returns:
+        list[Path]: List of file paths that match the inclusion patterns but not the exclusion patterns.
+    
+    Example:
+        patterns = [
+            "*.vhd",          # Include all VHDL files
+            "src/**/*.vhd",   # Include all VHDL files in src directory and subdirectories
+            "!src/temp/*",    # Exclude everything in the temp directory
+            "!**/*_test.py"   # Exclude all test files
+        ]
+        files = process_glob_patterns(patterns)
+    """
+    included_files: Set[str] = set()
+    excluded_files: Set[str] = set()
+    base_path = Path(base_path)
+
+    # Process all patterns
+    for pattern in patterns:
+        if pattern.startswith('!'):
+            # Handle exclusion pattern
+            exclude_pattern = pattern[1:]  # Remove the '!' character
+            matched_files = glob.glob(str(base_path / exclude_pattern), recursive=True)
+            excluded_files.update(matched_files)
+        else:
+            # Handle inclusion pattern
+            matched_files = glob.glob(str(base_path / pattern), recursive=True)
+            included_files.update(matched_files)
+
+    # Remove excluded files from included files
+    final_files = included_files - excluded_files
+
+    # Convert to sorted list of relative paths
+    return sorted(Path(f).relative_to(base_path) for f in final_files)
+
+
+
 class Name:
     lib: str
     name: Optional[str]
@@ -98,10 +144,10 @@ def path_from_dir(dir: Path, loc: Path):
 def get_file_modification_time(f: Path) -> int:
     return f.lstat().st_mtime
 
-def get_file_md5sum(f : Path) -> int:
-    with open(f, 'rb') as f_read:
-        data = f_read.read()
-        return hashlib.md5(data).digest()
+# def get_file_md5sum(f : Path) -> int:
+#     with open(f, 'rb') as f_read:
+#         data = f_read.read()
+#         return hashlib.md5(data).digest()
 
 
 def str_to_name(s: str):
@@ -294,6 +340,8 @@ class LookupSingular(Lookup):
         "file_list_files",
 #        "extern_deps",
         "extern_deps_file",
+        "glob_files",
+        "glob_extern_deps"
     ]
     VERSION = 1
 
@@ -309,10 +357,12 @@ class LookupSingular(Lookup):
         self.ignore_set_entities: set[Name] = set()
         self.toml_loc: Optional[Path] = None
         self.toml_modification_time = None
-        self.dependency_files_md5sum : dict [Path : int ] = {}
         self.top_lib : Optional[str] = None
         self.ignore_components : set[str] = set()
         self.files_2_skip_from_order : set[Path] = set()
+        self.hash_file_list = None
+        self.hash_extern_deps_list = None
+
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
         log.info(f'Adding {key} to dict')
@@ -341,7 +391,7 @@ class LookupSingular(Lookup):
         assert toml_loc.is_file()
         if not pickle_loc.is_file():
             log.debug('will not load from pickle no file at {pickle_loc}')
-            return None
+            return None, None, None
         log.info(f"atempting to load cache from {pickle_loc}")
         pickle_mod_time = get_file_modification_time(pickle_loc)
 
@@ -350,33 +400,42 @@ class LookupSingular(Lookup):
 
             if LookupSingular.VERSION != inst.version:
                 log.info(f'hdldepends version { LookupSingular.VERSION} but pickle top_lib {inst.version} will not load from pickle')
-                return None
+                return None, None, None
 
             toml_modification_time = get_file_modification_time(toml_loc)
             if toml_modification_time != inst.toml_modification_time:
                 log.info(f"will not load from pickle as {toml_loc} out of date")
-                return None
+                return None, None, None
 
             if top_lib != inst.top_lib:
                 log.info(f'requested top_lib {top_lib} but pickle top_lib {inst.top_lib} will not load from pickle')
-                return None
+                return None, None, None
 
-            for f, md5 in inst.dependency_files_md5sum.items():
-                try:
-                    out_of_date = md5 != get_file_md5sum(f)
-                except FileNotFoundError:
-                    log.info(f"will not load from pickle as {f} not found")
-                    return None
-                if out_of_date:
-                    log.info(f"will not load from pickle as {f} md5sum out of date")
-                    return None
-                   
+            config = load_config(toml_loc)
+
+            file_list = LookupSingular.get_file_list_from_config_dict(
+                config, toml_loc.parent, top_lib
+            )
+            hash_file_list = hash(frozenset(file_list))
+            if hash_file_list != inst.hash_file_list:
+                log.info(f'Will not load from pickle as file_list has changed')
+                return None, file_list, None
+
+            extern_deps_list = LookupSingular.get_extern_deps_list_from_config_dict(
+                config, toml_loc.parent, top_lib=top_lib
+            )
+            hash_extern_deps_list = hash(frozenset(extern_deps_list))
+
+            if hash_file_list != inst.hash_file_list:
+                log.info(f'Will not load from pickle as extern_deps_list has changed')
+                return None, file_list, extern_deps_list
+            
             log.info(f"loaded from {pickle_loc}, updating required files")
             any_changes = inst.check_for_src_files_updates()
             if any_changes:
                 log.info(f"Updating pickle wtih the changes detected on disk")
                 inst.save_to_pickle(pickle_loc)
-            return inst
+            return inst, file_list, extern_deps_list
         log.info(f"{pickle_loc} out of date")
 
     def save_to_pickle(self, pickle_loc: Path):
@@ -407,7 +466,9 @@ class LookupSingular(Lookup):
         return any_changes
 
     @staticmethod
-    def _process_config_opt_lib(config: dict, key: str, callback):
+    def _process_config_opt_lib(config: dict, key: str, callback, top_lib : Optional[str]):
+        if top_lib is None:
+            top_lib = 'work'
         if key not in config:
             return
         c_val = config[key]
@@ -420,9 +481,9 @@ class LookupSingular(Lookup):
                     callback(lib, val)
         elif isinstance(c_val, list):
             for v in c_val:
-                callback("work", v)
+                callback(top_lib, v)
         else:
-            callback("work", c_val)
+            callback(top_lib, c_val)
 
     @staticmethod
     def extract_set_str_from_config(
@@ -441,15 +502,13 @@ class LookupSingular(Lookup):
         l = []
 
         def call_back_func(lib: str, name: str):
-            if top_lib is not None and lib == 'work':
-                lib = top_lib;
             l.append(Name(lib=lib, name=name))
 
-        LookupSingular._process_config_opt_lib(config, key, call_back_func)
+        LookupSingular._process_config_opt_lib(config, key, call_back_func,top_lib=top_lib)
         log.info(f"{key} = {l}")
         return set(l)
 
-    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str]):
+    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str], file_list=None, extern_deps_list=None):
 
         if 'top_lib' in config:
             self.top_lib = config['top_lib']
@@ -465,38 +524,48 @@ class LookupSingular(Lookup):
         if 'ignore_components' in config:
             self.ignore_components = make_set(config['ignore_components'])
 
-        file_list = self.get_file_list_from_config_dict(
-            config, work_dir, top_lib
-        )
-        self.register_file_list(file_list)
-        
-        self.update_external_deps_from_config_dict(config, work_dir, top_lib=top_lib)
+        if file_list is None:
+            file_list = LookupSingular.get_file_list_from_config_dict(
+                config, work_dir, top_lib
+            )
 
-    def get_file_list_from_config_dict(self, config: dict, work_dir: Path, top_lib : Optional[str]):
-
-        log.debug(f'called get_file_list_from_config_dict( top_lib={top_lib} )')
-        file_list: list[tuple(str, Path)] = []
-
-        def add_file_to_list(lib, loc_str):
-            if top_lib is not None and lib == 'work':
-                lib = top_lib;
-            loc = path_from_dir(work_dir, Path(loc_str))
-            file_list.append((lib, loc))
-
-        LookupSingular._process_config_opt_lib(config, "files", add_file_to_list)
+        if extern_deps_list is None:
+            extern_deps_list = LookupSingular.get_extern_deps_list_from_config_dict(
+                config, work_dir, top_lib=top_lib
+            )
 
         def add_file_to_list_skip_order(lib, loc_str):
-            if top_lib is not None and lib == 'work':
-                lib = top_lib;
             loc = path_from_dir(work_dir, Path(loc_str))
             self.files_2_skip_from_order.add(loc)
+
+        LookupSingular._process_config_opt_lib(
+            config, "package_file_skip_order", add_file_to_list_skip_order, top_lib=top_lib
+        )
+
+        self.register_file_list(file_list)
+        self.register_extern_deps_list(extern_deps_list)
+
+    @staticmethod
+    def get_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
+        log.debug(f'called get_file_list_from_config_dict( top_lib={top_lib} )')
+        file_list = []
+
+        def add_file_to_list(lib, loc_str):
+            loc = path_from_dir(work_dir, Path(loc_str))
             file_list.append((lib, loc))
-        LookupSingular._process_config_opt_lib(config, "package_file_skip_order", add_file_to_list_skip_order)
+
+        LookupSingular._process_config_opt_lib(config, "files", add_file_to_list, top_lib=top_lib)
+
+        def add_file_to_list_skip_order(lib, loc_str):
+            loc = path_from_dir(work_dir, Path(loc_str))
+            file_list.append((lib, loc))
+
+        LookupSingular._process_config_opt_lib(
+            config, "package_file_skip_order", add_file_to_list_skip_order, top_lib=top_lib
+        )
         
 
         def add_file_list_to_list(lib, f_str):
-            if top_lib is not None and lib == 'work':
-                lib = top_lib;
             fl_loc = Path(f_str)
             fl_loc = path_from_dir(work_dir, fl_loc).resolve()
             with open(fl_loc, "r") as f_list_file:
@@ -504,49 +573,85 @@ class LookupSingular(Lookup):
                     loc_str = loc_str.strip()
                     loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
                     file_list.append((lib, loc))
-            self.dependency_files_md5sum[fl_loc] = get_file_md5sum(fl_loc)
 
         LookupSingular._process_config_opt_lib(
-            config, "file_list_files", add_file_list_to_list
+            config, "file_list_files", add_file_list_to_list, top_lib=top_lib
         )
 
-        # for lib, f in file_list:
-        #     print(f'{lib, f}')
+        glob_str_dict = {}
+        def add_to_glob_str_dict(lib, glob_str):
+            if lib not in glob_str_dict:
+                glob_str_dict[lib] = []
+            glob_str_dict[lib].append(glob_str)
 
-        return file_list
+        LookupSingular._process_config_opt_lib(
+            config, "glob_files", add_to_glob_str_dict, top_lib=top_lib
+        )
+
+        for lib, glob_str_list in glob_str_dict.items():
+            loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
+            for loc_rel in loc_rel_list:
+                loc = path_from_dir(work_dir, loc_rel).resolve()
+                file_list.append((lib, loc))
         
-    def update_external_deps_from_config_dict(self, config: dict, work_dir: Path, top_lib : Optional[str]):
+        return file_list
+
+    @staticmethod
+    def get_extern_deps_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
+        extern_deps_list = []
         def add_ext_dep_file_to_list(lib, f_str):
-            if top_lib is not None and lib == 'work':
-                lib = top_lib;
             fl_loc = Path(f_str)
             fl_loc = path_from_dir(work_dir, fl_loc).resolve()
             with open(fl_loc, "r") as f_list_file:
                 for loc_str in f_list_file:
                     loc_str = loc_str.strip()
                     loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
-                    f_obj = FileObj(loc=loc, lib=lib)
-                    entity_name = Name(lib, loc.stem)
-                    f_obj.entities.append(entity_name)
-                    self.entity_name_2_file_obj[entity_name] = f_obj
-                    self.loc_2_file_obj[loc] = f_obj
+                    extern_deps_list.append((lib, loc))
                     
-            self.dependency_files_md5sum[fl_loc] = get_file_md5sum(fl_loc)
-
         # "extern_deps", #TODO
-        LookupSingular._process_config_opt_lib(config, "extern_deps_file", add_ext_dep_file_to_list)
+        LookupSingular._process_config_opt_lib(
+            config, "extern_deps_file", add_ext_dep_file_to_list, top_lib=top_lib
+        )
+        
+        glob_str_dict = {}
+        def add_to_glob_str_dict(lib, glob_str):
+            if lib not in glob_str_dict:
+                glob_str_dict[lib] = []
+            glob_str_dict[lib].append(glob_str)
 
+        LookupSingular._process_config_opt_lib(
+            config, "glob_extern_deps", add_to_glob_str_dict, top_lib=top_lib
+        )
 
-    @staticmethod
-    def create_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
+        for lib, glob_str_list in glob_str_dict.items():
+            loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
+            for loc_rel in loc_rel_list:
+                loc = path_from_dir(work_dir, loc_rel).resolve()
+                extern_deps_list.append((lib, loc))
 
-        inst = LookupSingular()
-        inst.initalise_from_config_dict(config, work_dir, top_lib=top_lib)
-        return inst
+        return extern_deps_list
 
-    def register_file_list(self,file_list):
+    def register_extern_deps_list(self, extern_deps_list):
+        self.hash_extern_deps_list = hash(frozenset(extern_deps_list))
+        for lib, loc in extern_deps_list:
+            f_obj = FileObj(loc=loc, lib=lib)
+            entity_name = Name(lib, loc.stem)
+            f_obj.entities.append(entity_name)
+            self.entity_name_2_file_obj[entity_name] = f_obj
+            self.loc_2_file_obj[loc] = f_obj
+
+    def register_file_list(self, file_list):
+        self.hash_file_list = hash(frozenset(file_list))
         for lib, loc in file_list:
             parse_vhdl_file(self, loc, lib=lib)
+
+    @staticmethod
+    def create_from_config_dict(config: dict, work_dir: Path, **kwargs):
+
+        inst = LookupSingular()
+        inst.initalise_from_config_dict(config, work_dir, **kwargs)
+        return inst
+
 
 
     def add_package(self, name: Name, f_obj: FileObj):
@@ -623,16 +728,15 @@ class LookupMulti(LookupSingular):
 
     @staticmethod
     def create_from_config_dict(
-            config: dict, work_dir: Path, look_subs=[], top_lib : Optional[str] = None
+            config: dict, work_dir: Path, look_subs=[], **kwargs
     ):
 
         look = LookupMulti(look_subs)
-        look.initalise_from_config_dict(config, work_dir, top_lib=top_lib)
+        look.initalise_from_config_dict(config, work_dir, **kwargs)
         return look
 
-    def register_file_list(
-            self, file_list: list[tuple[str, Path]]
-    ):
+    def register_file_list(self, file_list):
+        self.hash_file_list = hash(frozenset(file_list))
         for lib, loc in file_list:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is not None:
@@ -705,7 +809,7 @@ class LookupMulti(LookupSingular):
 
 
 class LookupPrj(LookupMulti):
-    TOML_KEYS = ["top_file"]
+    TOML_KEYS = ["top_file", "top_entity"]
 
     def __init__(
             self, look_subs: list[LookupMulti]) : #, file_list: list[tuple[str, Path]] = [] ):
@@ -720,39 +824,59 @@ class LookupPrj(LookupMulti):
 
     @staticmethod
     def create_from_config_dict(
-            config: dict, work_dir: Path, look_subs=[], top_lib : Optional[str] = None
+            config: dict, work_dir: Path, look_subs=[], top_lib=None, **kwargs
     ):
 
         look = LookupPrj(look_subs)
-        look.initalise_from_config_dict(config, work_dir, top_lib=top_lib)
-
+        look.initalise_from_config_dict(config, work_dir, top_lib=top_lib, **kwargs)
         if "top_file" in config:
 
             l = []
 
             def call_back_func(lib: str, loc_str: str):
-                #TODO!!!!
-                if top_lib is not None and lib == 'work':
-                    lib = top_lib;
                 loc_str = work_dir / loc_str
                 n = (lib, loc_str)
                 if len(l) != 0:
                     raise Exception(f"only supports one top_file got {l[0]} and {n}")
                 l.append(n)
 
-            LookupSingular._process_config_opt_lib(config, "top_file", call_back_func)
+            LookupSingular._process_config_opt_lib(config, "top_file", call_back_func, top_lib=top_lib)
 
             assert len(l) == 1
-
+            
             lib = l[0][0]
             loc = Path(l[0][1])
             look.set_top_file(loc, lib)
+
+        if "top_entity" in config:
+            name_list = []
+            def call_back_func(lib: str, name_str: str):
+                name = Name(lib, name_str)
+                if len(name_list) != 0:
+                    raise Exception(f"only supports one entity but got {name_list[0]} and {n}")
+                name_list.append(name)
+
+            LookupSingular._process_config_opt_lib(config, "top_entity", call_back_func, top_lib=top_lib)
+            assert len(name_list) == 1
+            name = name_list[0]
+            look.set_top_entity(name, do_not_replace_top_file=True)
 
         return look
 
     def set_top_file(self, loc: Path, lib=None):
         self.f_obj_top = self.get_loc(loc, lib_to_add_to_if_not_found=lib)
         self._compile_order = None
+
+    def set_top_entity(self, name, do_not_replace_top_file=True):
+        if do_not_replace_top_file and self.f_obj_top is not None:
+            f_obj = self.get_entity(name, f_obj_required_by=None)
+            if f_obj != self.f_obj_top:
+                raise RuntimeError(f'cound not find entity {top_ent_name} in file {loc}')
+
+        else:
+            f_obj = self.get_entity(name, f_obj_required_by=None)
+            log.info(f'top_entity {name} found in file {f_obj.loc}')
+            self.set_top_file(f_obj.loc, f_obj.lib)
 
     def has_top_file(self) -> bool:
         return self.f_obj_top is not None
@@ -864,6 +988,14 @@ def issue_key(good_keys: list, keys: list) -> Optional[str]:
     return None
 
 
+def load_config(toml_loc):
+    is_json = toml_loc.suffix == '.json'
+    with open(toml_loc, "rb") as toml_f:
+        if is_json:
+            return json.load(toml_f)
+        else:
+            return tomllib.load(toml_f)
+
 def create_lookup_from_toml(
     toml_loc: Path, work_dir: Optional[Path] = None, attemp_read_pickle = True, write_pickle = True, force_LookupPrj=False, top_lib : Optional[str]= None
 ):
@@ -894,12 +1026,7 @@ def create_lookup_from_toml(
 
 
     pickle_loc = LookupSingular.toml_loc_to_pickle_loc(toml_loc)
-
-    with open(toml_loc, "rb") as toml_f:
-        if is_json:
-            config = json.load(toml_f)
-        else:
-            config = tomllib.load(toml_f)
+    config = load_config(toml_loc)
 
     work_dir = toml_loc.parents[0]
 
@@ -913,20 +1040,16 @@ def create_lookup_from_toml(
                 create_lookup_from_toml(loc, work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib)
             )
 
-        # log.info(f"create LookupPrj from {toml_loc}")
-        # return LookupPrj.create_from_config_dict(
-        #     config, work_dir=work_dir, look_subs=look_subs
-        # )
-
     if 'pre_cmds' in config:
         print(f'pre_cmds')
         for cmd in make_list(config['pre_cmds']):
             print(f'cmd {cmd}')
             subprocess.check_output(cmd, shell=True, cwd=work_dir)
 
-
+    file_list = None
+    extern_deps_list = None
     if attemp_read_pickle:
-        inst = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
+        inst, file_list, extern_deps_list = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
         if inst is not None:
             inst.look_subs = look_subs
             return inst
@@ -941,19 +1064,19 @@ def create_lookup_from_toml(
 
         log.info(f"create LookupPrj from {toml_loc}")
         inst = LookupPrj.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib
+            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, file_list=file_list, extern_deps_list = extern_deps_list
         )
 
     elif contains_any(config.keys(), LookupMulti.TOML_KEYS):
 
         log.info(f"create LookupMulti from {toml_loc}")
         inst = LookupMulti.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib
+            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, file_list=file_list, extern_deps_list = extern_deps_list
         )
 
     else :
         inst = LookupSingular.create_from_config_dict(
-            config, work_dir=work_dir, top_lib=top_lib
+            config, work_dir=work_dir, top_lib=top_lib, file_list=file_list, extern_deps_list = extern_deps_list
         )
 
     print(f'toml_loc {toml_loc}')
@@ -999,6 +1122,7 @@ if __name__ == "__main__":
         help="Paths to / File Names of, the config TOML input file(s).",
     )
     parser.add_argument("--top-file", type=str, help="top level file to use")
+    parser.add_argument("--top-entity", type=str, help="top entity to use")
     parser.add_argument("--top-lib", type=str, help="top level library")
     parser.add_argument(
         "--compile-order", type=str, help="Path to the compile order output file."
@@ -1043,6 +1167,12 @@ if __name__ == "__main__":
     if args.top_file:
         look.set_top_file(Path(args.top_file), "work")
 
+    if args.top_entity:
+        lib = top_lib
+        if lib is None:
+            lib = 'work'
+        name = Name(lib, args.top_entity)
+        look.set_top_entity(name, do_not_replace_top_file=True)
 
     if look.has_top_file():
         look.print_compile_order()

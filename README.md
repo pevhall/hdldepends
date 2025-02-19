@@ -12,6 +12,17 @@ This is a list of all the allowed flags for the configuration files
 
 For tags that accept a *library* dictionary, then the dictionary key is the library name. The dictionary value can be a list to contain more then one item to connect to the library. If no dictionary is not specified then the default `work` library is assumed.
 
+### `glob_files`
+Glob for files in the directory structure. Globs are run in order, place a '!' as the frist character to remove matching files from the list. (works similar to gitignore)
+
+This tag accepts a *library* dictionary list or single value.
+
+Examples:
+ * "*.vhd",          # Include all VHDL files
+ * "src/**/*.vhd",   # Include all VHDL files in src directory and subdirectories
+ * "!src/temp/*",    # Exclude everything in the temp directory
+ * "!**/*_test.py"   # Exclude all test files
+
 ### `pre_cmds`
 Pre-commands are commands to run before other tags are processed.
 
@@ -31,6 +42,11 @@ This tag accepts a *library* dictionary list or single value.
 
 ### `files`
 Files contain files to add the project;
+
+This tag accepts a *library* dictionary list or single value.
+
+### `glob_extern_deps`
+Glob for external dependencies in the directory structure. See `glob_files` and `extern_deps_file`
 
 This tag accepts a *library* dictionary list or single value.
 
@@ -77,7 +93,12 @@ The sub tag adds other configuration files to the project. Which will be searche
 This tag accepts a list or a single value.
 
 ### `top_file`
-This is the top level file to create the compile order from. You can use the command line option instead. Note, a configuration file containing this tag cannot be referenced by another configuration through the `sub` tag.
+This is the top level file to create the compile order from, it expects a path to the file not just the file name. You can use the command line option instead. Note, a configuration file containing this tag cannot be referenced by another configuration through the `sub` tag.
+
+This tag accepts a single value.
+
+### `top_entity`
+This is the top entity to create the compile order from. You can use the command line option instead. Note, a configuration file containing this tag cannot be referenced by another configuration through the `sub` tag.
 
 This tag accepts a single value.
 
@@ -104,6 +125,9 @@ Do not load anything from a pickle cache and do not write any pickle caches
 
 ### `--top-file`
 The top file command line option specifies the project's top level file to create the compile order from. This works the same as the configuration file key `top_file`.
+
+### `--top-entity`
+The top file command line option specifies the project's top level file to create the compile order from. This works the same as the configuration file key `top_entity`.
 
 ### `--top-lib`
 This is a bit of a hack. It will give the `work` library the passed name.
