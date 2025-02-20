@@ -134,6 +134,14 @@ This is a bit of a hack. It will give the `work` library the passed name.
 
 NOTE: If it changes it will evaluate every cached file referenced.
 
+### `--file-list`
+The file list command line option accepts a location to a file not yet created. This will save a list of all added to the hdldepends project. Each line contains:
+ * library, and
+ * absolute path to file under question.
+
+### `--file-list-lib`
+The file list library option exports the file list for one particular library. The option accepts *lib:file* where lib is the library to export and file is the location to export the file list to. Each line of the created file will contain the absolute path to a file.
+
 ### `--compile-order`
 The compile order command line option accepts a location to a file not yet created. The project compile order will be exported to this file. Each line containing:
  * library, and

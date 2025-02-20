@@ -3,12 +3,9 @@ import sys
 import glob
 import pickle
 import hashlib
-
-# try:
 import json
+import fnmatch
 import tomllib
-# except ModuleNotFoundError:
-#     import pip._vendor.tomli as tomllib
 import argparse
 import subprocess
 from pathlib import Path
@@ -63,48 +60,52 @@ regex_patterns = {
     ),
     }
 
+
 def process_glob_patterns(patterns: list[str], base_path: str = ".") -> list[Path]:
     """
-    Process a list of glob patterns, including exclusion patterns (starting with '!'),
-    to generate a filtered list of file paths.
+    Process a list of glob patterns sequentially, including exclusion patterns (starting with '!'),
+    to generate a filtered list of file paths. Each pattern modifies the current file list.
     
     Args:
-        patterns (list[str]): List of glob patterns. Patterns starting with '!' are exclusions.
+        patterns (list[str]): list of glob patterns. Patterns starting with '!' are exclusions.
         base_path (str): Base directory to start glob searches from. Defaults to current directory.
     
     Returns:
-        list[Path]: List of file paths that match the inclusion patterns but not the exclusion patterns.
+        list[str]: list of absolute file paths that match the inclusion patterns but not the exclusion patterns.
     
     Example:
         patterns = [
-            "*.vhd",          # Include all VHDL files
-            "src/**/*.vhd",   # Include all VHDL files in src directory and subdirectories
-            "!src/temp/*",    # Exclude everything in the temp directory
-            "!**/*_test.py"   # Exclude all test files
+            "*.py",          # Include all Python files
+            "test/*.py",     # Include additional Python files in test directory
+            "!**/temp*"      # Exclude any files with temp in the name from current list
         ]
         files = process_glob_patterns(patterns)
     """
-    included_files: Set[str] = set()
-    excluded_files: Set[str] = set()
-    base_path = Path(base_path)
+    base_path = Path(base_path).resolve()  # Get absolute path of base directory
+    current_files = set()
 
-    # Process all patterns
+    # Process patterns sequentially
     for pattern in patterns:
         if pattern.startswith('!'):
-            # Handle exclusion pattern
+            # Handle exclusion pattern - remove matching files from current set
             exclude_pattern = pattern[1:]  # Remove the '!' character
-            matched_files = glob.glob(str(base_path / exclude_pattern), recursive=True)
-            excluded_files.update(matched_files)
+            
+            # Convert glob pattern to fnmatch pattern
+            # Replace '**/' with '*/' for deep matching
+            fnmatch_pattern = exclude_pattern.replace('**/', '*/')
+            
+            # Filter out matching files from current set
+            current_files = {
+                f for f in current_files 
+                if not fnmatch.fnmatch(f, fnmatch_pattern)
+            }
         else:
-            # Handle inclusion pattern
+            # Handle inclusion pattern - add new matching files
             matched_files = glob.glob(str(base_path / pattern), recursive=True)
-            included_files.update(matched_files)
+            current_files.update(Path(f).resolve() for f in matched_files)
 
-    # Remove excluded files from included files
-    final_files = included_files - excluded_files
-
-    # Convert to sorted list of relative paths
-    return sorted(Path(f).relative_to(base_path) for f in final_files)
+    # Return sorted list of absolute paths
+    return sorted(current_files)
 
 
 
@@ -536,6 +537,7 @@ class LookupSingular(Lookup):
 
         def add_file_to_list_skip_order(lib, loc_str):
             loc = path_from_dir(work_dir, Path(loc_str))
+            loc = loc.resolve()
             self.files_2_skip_from_order.add(loc)
 
         LookupSingular._process_config_opt_lib(
@@ -712,8 +714,26 @@ class LookupSingular(Lookup):
     def get_top_lib(self):
         return self.top_lib
 
-    def set_top_lib(self, top_lib : Optional[str]):
+    def set_top_lib(self, top_lib : Optional[str] = None):
         self.top_lib = top_lib
+
+    def get_file_list(self, lib:Optional[str]=None):
+        file_list = []
+        for f_obj in self.loc_2_file_obj.values():
+            if f_obj.loc in look.files_2_skip_from_order:
+                continue #skip
+            if lib is None or lib == f_obj.lib:
+                file_list.append(f_obj)
+        return file_list
+
+    def write_file_list(self, f_loc, lib : Optional[str] = None):
+        file_list = self.get_file_list(lib=lib)
+        with open(f_loc, 'w') as f:
+            for f_obj in file_list:
+                if lib is None:
+                    f.write(f'{f_obj.lib}\t{f_obj.loc}\n')
+                else:
+                    f.write(str(f_obj.loc)+'\n')
 
 class LookupMulti(LookupSingular):
     TOML_KEYS = ["sub"]
@@ -807,6 +827,12 @@ class LookupMulti(LookupSingular):
         call_back_func_arr = [cb] + [l.get_entity for l in self.look_subs]
         return self._get_named_item("entity", name, call_back_func_arr, f_obj_required_by)
 
+    def get_file_list(self, lib:Optional[str]=None):
+        file_list = LookupSingular.get_file_list(self, lib=lib)
+        
+        for s in self.look_subs:
+            file_list += s.get_file_list(lib=lib)
+        return file_list
 
 class LookupPrj(LookupMulti):
     TOML_KEYS = ["top_file", "top_entity"]
@@ -1128,20 +1154,19 @@ if __name__ == "__main__":
         "--compile-order", type=str, help="Path to the compile order output file."
     )
     parser.add_argument(
-        "--compile-order-lib", nargs ="+", type=extract_lib_compiler_order, help="expects 'lib:file' where 'file' is where to write the compile order of libary 'lib'."
+        "--file-list", type=str, help="Output full file list of in project"
+    )
+    parser.add_argument(
+        "--compile-order-lib", nargs ="+", type=extract_lib_compiler_order, help="expects 'lib:file' where 'file' is location to write the compile order of libary 'lib'."
+    )
+    parser.add_argument(
+        "--file-list-lib", nargs ="+", type=extract_lib_compiler_order, help="expects 'lib:file' where 'file' is location to write the file list of library 'lib'."
     )
 
     args = parser.parse_args()
 
     set_log_level_from_verbose(args)
 
-    # Example usage
-    # print("Clear Cache:", args.clear_cache)
-    log.debug("Config TOML:", args.config_file,', len = ',len(args.config_file))
-    log.debug("Compile Order:", args.compile_order)
-    log.debug("do not read pickles", args.clear_pickle)
-    log.debug("no pickle", args.no_pickle)
-    # print("File Dependencies:", args.file_dependencies)
     work_dir=Path('.')
     top_lib = None
     if args.top_lib:
@@ -1176,6 +1201,13 @@ if __name__ == "__main__":
 
     if look.has_top_file():
         look.print_compile_order()
+
+    if args.file_list is not None:
+        look.write_file_list(Path(args.file_list))
+
+    if args.file_list_lib is not None:
+        for lib, f in args.compile_order_lib:
+            look.write_file_list(Path(f), lib)
 
     if args.compile_order is not None:
         look.write_compile_order(Path(args.compile_order))
