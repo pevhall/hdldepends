@@ -1,7 +1,7 @@
 {
   "sub" : "hdl_deps_sub1.toml",
   "ignore_components" : "delComp2",
-  "extern_deps_file" : "extern_deps.txt",
+  "other_files_file" : "extern_deps.txt",
   "top_file" : "./del.vhd",
   "files" : "./del3.vhd",
 

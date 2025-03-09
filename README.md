@@ -12,7 +12,7 @@ This is a list of all the allowed flags for the configuration files
 
 For tags that accept a *library* dictionary, then the dictionary key is the library name. The dictionary value can be a list to contain more then one item to connect to the library. If no dictionary is not specified then the default `work` library is assumed.
 
-### `glob_files`
+### `vhdl_files_glob`
 Glob for files in the directory structure. Globs are run in order, place a '!' as the frist character to remove matching files from the list. (works similar to gitignore)
 
 This tag accepts a *library* dictionary list or single value.
@@ -35,22 +35,22 @@ git ls_files ./fw | grep ".vhd$" > fw_files_work.txt
 This will place all `.vhd` files paths into fw-files_work.txt.
 
 
-### `file_list_files`
+### `vhdl_files_file`
 File list of files is a tag which points to file containing a list of file paths to add to the project.
 
 This tag accepts a *library* dictionary list or single value.
 
-### `files`
-Files contain files to add the project;
+### `vhdl_files`
+Vhdl files contain a list of VHDL files to add to the project;
 
 This tag accepts a *library* dictionary list or single value.
 
-### `glob_extern_deps`
-Glob for external dependencies in the directory structure. See `glob_files` and `extern_deps_file`
+### `glob_other_files`
+Glob for external dependencies in the directory structure. See `glob_files` and `other_files_file`
 
 This tag accepts a *library* dictionary list or single value.
 
-### `extern_deps_file`
+### `other_files_file`
 External dependencies file is a tag which points to a file containing a list of files which are dependencies but not something which can be passed.
 
 NOTE: There is an assumption that the name of file containing the external dependency (excluding the file extension) is the same as the entity name. 

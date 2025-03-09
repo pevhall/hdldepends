@@ -1,6 +1,6 @@
 
 ignore_libs = 'xpm'
 sub ='hdl_deps_sub2.toml'
-file_list_files = './fw_files1.txt'
+vhdl_files_file = './fw_files1.txt'
 
 

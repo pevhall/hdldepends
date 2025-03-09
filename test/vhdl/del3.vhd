@@ -25,6 +25,17 @@ end entity;
 
 architecture sim of del3 is
 
+  component up_down_counter is
+    port (
+      cntr_o : out std_logic_vector(7 downto 0);
+      up_down_i : in std_logic;
+      clk_i : in std_logic;
+      rst_i : in std_logic;
+    );
+  end component;
+
+  signal cntr : std_logic_vector(8-1 downto 0);
+
 begin
 
  i_del : entity work.del211
@@ -43,6 +54,13 @@ begin
    tedast_i => tedast_i
  );
 
+  i_up_down_cntr : entity work.up_down_counter
+  port map (
+    cntr_o    => cntr,
+    up_down_i => '1',
+    clk_i     => clk_i,
+    rst_i     => '0'
+  );
 
 end architecture;
 
