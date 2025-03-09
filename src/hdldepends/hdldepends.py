@@ -1,3 +1,4 @@
+# vi: foldmethod=marker
 import re
 import sys
 import glob
@@ -12,9 +13,11 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import Optional, Union
 
+
+#created own crapy logger because logging doesn't work with f strings {{{
+
 log_level = 0
 
-#created own crapy logger because logging doesn't work with f strings
 class log:
     def _log(severity, *args, **kwargs):
         print(f'[{severity}]', *args, **kwargs, file=sys.stderr)
@@ -33,35 +36,65 @@ class log:
     def debug(*args, **kwargs):
         if log_level >= 2:
             log._log('DEBUG', *args, **kwargs)
-
-regex_patterns = {
-    "package_decl": re.compile(
-        r"^(?!\s*--)\s*package\s+(\w+)\s+is.*?end\s+(?:package|\1)",
-        re.DOTALL | re.IGNORECASE | re.MULTILINE,
-    ),
-    "entity_decl": re.compile(
-        r"^(?!\s*--)\s*entity\s+(\w+)\s+is.*?end\s+(?:entity|\1)",
-        re.DOTALL | re.IGNORECASE | re.MULTILINE,
-    ),
-    "component_decl": re.compile(
-        r"^(?!\s*--)\s*component\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)",
-        re.DOTALL | re.IGNORECASE | re.MULTILINE,
-    ),
-    "component_inst": re.compile(
-        r"^(?!\s*--)\s*(\w+)\s*:\s*(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
-        re.DOTALL | re.IGNORECASE | re.MULTILINE,
-    ),
-    "direct_inst": re.compile(
-        r"^(?!\s*--)\s*(\w+)\s*:\s*(?:entity\s+)?(\w+)\.(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
-        re.DOTALL | re.IGNORECASE | re.MULTILINE,
-    ),
-    "package_use": re.compile(
-        r"^(?!\s*--)\s*use\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
-    ),
-    }
+#}}}
 
 
-def process_glob_patterns(patterns: list[str], base_path: str = ".") -> list[Path]:
+# regex_patterns_verilog = {
+#     'include' : re.compile( r'`include\s+["<]([^">]+)[">]'
+#     ),
+#     'entity_decl' : re.compile( r'`include\s+["<]([^">]+)[">]'
+#     ),
+# }
+
+# Utility function {{{
+def path_from_dir(dir: Path, loc: Path):
+    if not loc.is_absolute():
+        loc = dir / loc
+    return loc
+
+
+def get_file_modification_time(f: Path) -> int:
+    return f.lstat().st_mtime
+
+def str_to_name(s: str):
+    l = s.split(".")
+    if len(l) == 1:  # no lib use default
+        return Name("work", name=l[0])
+    elif len(l) == 2:
+        return Name(lib=l[0], name=l[1])
+    else:
+        raise Exception(f"ERROR converting str {s} to Name")
+
+def contains_any(a: list, b: list) -> bool:
+    for aa in a:
+        if aa in b:
+            return True
+    return False
+
+
+def issue_key(good_keys: list, keys: list) -> Optional[str]:
+    for k in keys:
+        if not k in good_keys:
+            return k
+    return None
+
+def make_list(v) -> list:
+    if isinstance(v, list):
+        return v
+    else:
+        return [v]
+
+
+def make_set(v) -> set:
+    if isinstance(v, set):
+        return v
+    else:
+        return make_list(v)
+
+
+# }}}
+
+def process_glob_patterns(patterns: list[str], base_path: str = ".") -> list[Path]: # {{{
     """
     Process a list of glob patterns sequentially, including exclusion patterns (starting with '!'),
     to generate a filtered list of file paths. Each pattern modifies the current file list.
@@ -106,10 +139,9 @@ def process_glob_patterns(patterns: list[str], base_path: str = ".") -> list[Pat
 
     # Return sorted list of absolute paths
     return sorted(current_files)
+# }}}
 
-
-
-class Name:
+class Name: # {{{
     lib: str
     name: Optional[str]
 
@@ -134,34 +166,9 @@ class Name:
 
     def __hash__(self):
         return hash((self.lib, self.name))
+#}}}
 
-
-def path_from_dir(dir: Path, loc: Path):
-    if not loc.is_absolute():
-        loc = dir / loc
-    return loc
-
-
-def get_file_modification_time(f: Path) -> int:
-    return f.lstat().st_mtime
-
-# def get_file_md5sum(f : Path) -> int:
-#     with open(f, 'rb') as f_read:
-#         data = f_read.read()
-#         return hashlib.md5(data).digest()
-
-
-def str_to_name(s: str):
-    l = s.split(".")
-    if len(l) == 1:  # no lib use default
-        return Name("work", name=l[0])
-    elif len(l) == 2:
-        return Name(lib=l[0], name=l[1])
-    else:
-        raise Exception(f"ERROR converting str {s} to Name")
-
-
-class Lookup:
+class Lookup: #{{{
     def get_package(self, name: Name, f_obj_required_by : Optional["FileObj"]):
         pass
 
@@ -170,9 +177,101 @@ class Lookup:
 
     def add_loc(self, loc: Path, f_obj: "FileObj"):
         pass
+#}}}
+
+# VHDL file parsing {{{
+regex_patterns = {
+    "package_decl": re.compile(
+        r"^(?!\s*--)\s*package\s+(\w+)\s+is.*?end\s+(?:package|\1)",
+        re.DOTALL | re.IGNORECASE | re.MULTILINE,
+    ),
+    "entity_decl": re.compile(
+        r"^(?!\s*--)\s*entity\s+(\w+)\s+is.*?end\s+(?:entity|\1)",
+        re.DOTALL | re.IGNORECASE | re.MULTILINE,
+    ),
+    "component_decl": re.compile(
+        r"^(?!\s*--)\s*component\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)",
+        re.DOTALL | re.IGNORECASE | re.MULTILINE,
+    ),
+    "component_inst": re.compile(
+        r"^(?!\s*--)\s*(\w+)\s*:\s*(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
+        re.DOTALL | re.IGNORECASE | re.MULTILINE,
+    ),
+    "direct_inst": re.compile(
+        r"^(?!\s*--)\s*(\w+)\s*:\s*(?:entity\s+)?(\w+)\.(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
+        re.DOTALL | re.IGNORECASE | re.MULTILINE,
+    ),
+    "package_use": re.compile(
+        r"^(?!\s*--)\s*use\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
+    ),
+}
+
+def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work"):
+    """ Function to find matches in the VHDL code """
+
+    log.info(f"passing VHDL file {loc}:")
+    with open(loc, "r") as file:
+        vhdl = file.read()
+
+        f_obj = FileObj(loc, lib=lib)
+
+        matches = {}
+        for key, pattern in regex_patterns.items():
+            matches[key] = pattern.findall(vhdl)
+        for construct, found in matches.items():
+            match construct:
+                case "package_decl":
+                    for item in found:
+                        name = Name(lib, item)
+                        f_obj.packages.append(name)
+                        log.info(f"\tpackage_decl: {name}")
+                case "entity_decl":
+                    for item in found:
+                        name = Name(lib, item)
+                        f_obj.entities.append(name)
+                        log.info(f"\tentity_decl: {name}")
+                case "component_decl":
+                    for item in found:
+                        component = item
+                        log.info(f"\tcomponent_decl: {component}")
+                        f_obj.component_decl.append(component)
+                case "component_inst":
+                    for item in found:
+                        component = item[1]
+                        f_obj.component_deps.append(component)
+                        log.info(f"\tcomponent_inst: {component}")  # Extract component name
+                case "direct_inst":
+                    for item in found:
+                        l = item[1]
+                        if l == 'work':
+                            l = lib
+                        name = Name(l, item[2])
+                        f_obj.entity_deps.append(name)
+                        log.info(
+                                f"\tdirect_inst {name}"
+                            )  # Extract library and component names
+                case "package_use":
+                    for item in found:
+                        l = item[0]
+                        if l == 'work':
+                            l = lib
+                        name = Name(l, item[1])
+                        f_obj.package_deps.append(name)
+                        log.info(
+                            f"\tpackage_use {name}"
+                        )  # Extract library and package names`
+                case _:
+                    raise Exception(f"error construct '{construct}'")
+
+        if look is not None:
+            f_obj.register_with_lookup(look)
+        return f_obj
 
 
-class FileObj:
+# }}}
+
+# Constructs to handle files {{{
+class FileObj: 
 
     def __init__(self, loc: Path, lib: str):
         self.loc = loc.resolve()
@@ -286,13 +385,6 @@ class FileObj:
             #modificaiton time and level are not checked
         return result
 
-
-
-IGNORE_SET_LIBS_DEFAULT = {
-    "ieee",
-}
-
-
 class ConflictFileObj:
     def __init__(self, conflict_list: list[FileObj]):
         self.loc_2_file_obj: dict[Path, FileObj] = {}
@@ -314,22 +406,9 @@ class ConflictFileObj:
 
 FileObjLookup = Union[ConflictFileObj, FileObj]
 
+# }}}
 
-def make_list(v) -> list:
-    if isinstance(v, list):
-        return v
-    else:
-        return [v]
-
-
-def make_set(v) -> set:
-    if isinstance(v, set):
-        return v
-    else:
-        return make_list(v)
-
-
-class LookupSingular(Lookup):
+class LookupSingular(Lookup): # {{{
     TOML_KEYS = [
         "pre_cmds",
         "ignore_libs",
@@ -734,8 +813,9 @@ class LookupSingular(Lookup):
                     f.write(f'{f_obj.lib}\t{f_obj.loc}\n')
                 else:
                     f.write(str(f_obj.loc)+'\n')
+#}}}
 
-class LookupMulti(LookupSingular):
+class LookupMulti(LookupSingular):  # {{{
     TOML_KEYS = ["sub"]
 
     def __init__(
@@ -833,8 +913,9 @@ class LookupMulti(LookupSingular):
         for s in self.look_subs:
             file_list += s.get_file_list(lib=lib)
         return file_list
+#}}}
 
-class LookupPrj(LookupMulti):
+class LookupPrj(LookupMulti): #{{{
     TOML_KEYS = ["top_file", "top_entity"]
 
     def __init__(
@@ -937,83 +1018,9 @@ class LookupPrj(LookupMulti):
                     lines += 1
         if lines == 0:
             log.warning(f'not files found for libarary {lib}')
+#}}}
 
-# Function to find matches in the VHDL code
-def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib="work"):
-
-    log.info(f"passing VHDL file {loc}:")
-    with open(loc, "r") as file:
-        vhdl = file.read()
-
-        f_obj = FileObj(loc, lib=lib)
-
-        matches = {}
-        for key, pattern in regex_patterns.items():
-            matches[key] = pattern.findall(vhdl)
-        for construct, found in matches.items():
-            match construct:
-                case "package_decl":
-                    for item in found:
-                        name = Name(lib, item)
-                        f_obj.packages.append(name)
-                        log.info(f"\tpackage_decl: {name}")
-                case "entity_decl":
-                    for item in found:
-                        name = Name(lib, item)
-                        f_obj.entities.append(name)
-                        log.info(f"\tentity_decl: {name}")
-                case "component_decl":
-                    for item in found:
-                        component = item
-                        log.info(f"\tcomponent_decl: {component}")
-                        f_obj.component_decl.append(component)
-                case "component_inst":
-                    for item in found:
-                        component = item[1]
-                        f_obj.component_deps.append(component)
-                        log.info(f"\tcomponent_inst: {component}")  # Extract component name
-                case "direct_inst":
-                    for item in found:
-                        l = item[1]
-                        if l == 'work':
-                            l = lib
-                        name = Name(l, item[2])
-                        f_obj.entity_deps.append(name)
-                        log.info(
-                                f"\tdirect_inst {name}"
-                            )  # Extract library and component names
-                case "package_use":
-                    for item in found:
-                        l = item[0]
-                        if l == 'work':
-                            l = lib
-                        name = Name(l, item[1])
-                        f_obj.package_deps.append(name)
-                        log.info(
-                            f"\tpackage_use {name}"
-                        )  # Extract library and package names`
-                case _:
-                    raise Exception(f"error construct '{construct}'")
-
-        if look is not None:
-            f_obj.register_with_lookup(look)
-        return f_obj
-
-
-def contains_any(a: list, b: list) -> bool:
-    for aa in a:
-        if aa in b:
-            return True
-    return False
-
-
-def issue_key(good_keys: list, keys: list) -> Optional[str]:
-    for k in keys:
-        if not k in good_keys:
-            return k
-    return None
-
-
+# Handling of configuration files {{{
 def load_config(toml_loc):
     is_json = toml_loc.suffix == '.json'
     with open(toml_loc, "rb") as toml_f:
@@ -1116,10 +1123,9 @@ def create_lookup_from_toml(
         if look_subs is not None:
             inst.look_subs = look_subs
     return inst
+# }}}
 
-
-# Use match statement to handle different constructs
-
+# {{{ Main method handeling
 def extract_lib_compiler_order(s)-> tuple[str, str]:
     try:
         lib, f = s.split(':')
@@ -1215,4 +1221,4 @@ if __name__ == "__main__":
         for lib, f in args.compile_order_lib:
             look.write_compile_order_lib(Path(f), lib)
             
-
+# }}}
