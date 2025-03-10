@@ -12,17 +12,6 @@ This is a list of all the allowed flags for the configuration files
 
 For tags that accept a *library* dictionary, then the dictionary key is the library name. The dictionary value can be a list to contain more then one item to connect to the library. If no dictionary is not specified then the default `work` library is assumed.
 
-### `vhdl_files_glob`
-Glob for files in the directory structure. Globs are run in order, place a '!' as the frist character to remove matching files from the list. (works similar to gitignore)
-
-This tag accepts a *library* dictionary list or single value.
-
-Examples:
- * "*.vhd",          # Include all VHDL files
- * "src/**/*.vhd",   # Include all VHDL files in src directory and subdirectories
- * "!src/temp/*",    # Exclude everything in the temp directory
- * "!**/*_test.py"   # Exclude all test files
-
 ### `pre_cmds`
 Pre-commands are commands to run before other tags are processed.
 
@@ -35,6 +24,18 @@ git ls_files ./fw | grep ".vhd$" > fw_files_work.txt
 This will place all `.vhd` files paths into fw-files_work.txt.
 
 
+### `vhdl_files_glob`
+Glob for files in the directory structure. Globs are run in order, place a '!' as the frist character to remove matching files from the list. (works similar to gitignore)
+
+This tag accepts a *library* dictionary list or single value.
+
+Examples:
+ * "*.vhd",          # Include all VHDL files
+ * "src/**/*.vhd",   # Include all VHDL files in src directory and subdirectories
+ * "!src/temp/*",    # Exclude everything in the temp directory
+ * "!**/*_test.py"   # Exclude all test files
+
+
 ### `vhdl_files_file`
 File list of files is a tag which points to file containing a list of file paths to add to the project.
 
@@ -45,7 +46,22 @@ Vhdl files contain a list of VHDL files to add to the project;
 
 This tag accepts a *library* dictionary list or single value.
 
-### `glob_other_files`
+### `verilog_files_glob`
+Glob for files in the directory structure. Globs are run in order, place a '!' as the frist character to remove matching files from the list. (works similar to gitignore)
+
+This tag accepts a list or single value.
+
+### `verilog_files_file`
+File list of files is a tag which points to file containing a list of file paths to add to the project.
+
+This tag accepts a list or single value.
+
+### `verilog_files`
+Verilog files contain a list of Verilog files to add to the project;
+
+This tag accepts list or single value.
+
+### `other_files_glob`
 Glob for external dependencies in the directory structure. See `glob_files` and `other_files_file`
 
 This tag accepts a *library* dictionary list or single value.
@@ -92,7 +108,12 @@ The sub tag adds other configuration files to the project. Which will be searche
 
 This tag accepts a list or a single value.
 
-### `top_file`
+### `top_vhdl_file`
+This is the top level file to create the compile order from, it expects a path to the file not just the file name. You can use the command line option instead. Note, a configuration file containing this tag cannot be referenced by another configuration through the `sub` tag.
+
+This tag accepts a single value.
+
+### `top_verilog_file`
 This is the top level file to create the compile order from, it expects a path to the file not just the file name. You can use the command line option instead. Note, a configuration file containing this tag cannot be referenced by another configuration through the `sub` tag.
 
 This tag accepts a single value.
@@ -139,6 +160,16 @@ The file list command line option accepts a location to a file not yet created. 
  * library, and
  * absolute path to file under question.
 
+### `--file-list-vhdl`
+The file list command line option accepts a location to a file not yet created. This will save a list of all added to the hdldepends project. Each line contains:
+ * library, and
+ * absolute path to file under question.
+
+### `--file-list-verilog`
+The file list command line option accepts a location to a file not yet created. This will save a list of all added to the hdldepends project. Each line contains:
+ * library, and
+ * absolute path to file under question.
+
 ### `--file-list-lib`
 The file list library option exports the file list for one particular library. The option accepts *lib:file* where lib is the library to export and file is the location to export the file list to. Each line of the created file will contain the absolute path to a file.
 
@@ -146,6 +177,15 @@ The file list library option exports the file list for one particular library. T
 The compile order command line option accepts a location to a file not yet created. The project compile order will be exported to this file. Each line containing:
  * library, and
  * absolute path to file under question.
+
+### `--compile-order-vhdl`
+The compile order command line option accepts a location to a file not yet created. The project compile order will be exported to this file. Each line containing:
+ * library, and
+ * absolute path to file under question.
+
+### `--compile-order-verilog`
+The compile order command line option accepts a location to a file not yet created. The project compile order will be exported to this file. Each line containing absolute path to file under question.
+
 
 ### `--compile-order-lib`
 The compile order library option exports the compile order for one particular library. The option accepts *lib:file* where lib is the library to export and file is the location to export the compile order. Each line of the created file will contain the absolute path to a file.
