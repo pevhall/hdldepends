@@ -480,43 +480,48 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT) -> FileO
             case "package_decl":
                 for item in found:
                     name = Name(lib, item)
-                    f_obj.vhdl_packages.append(name)
-                    log.info(f"\tpackage_decl: {name}")
+                    if name not in f_obj.vhdl_packages:
+                        log.debug(f'VHDL {loc} declares package {name}')
+                        f_obj.vhdl_packages.append(name)
             case "entity_decl":
                 for item in found:
                     name = Name(lib, item)
-                    f_obj.entities.append(name)
-                    log.info(f"\tentity_decl: {name}")
+                    if name not in f_obj.entities:
+                        f_obj.entities.append(name)
+                        log.debug(f'VHDL {loc} component decared {name}')
             case "vhdl_component_decl":
                 for item in found:
                     component = item
-                    log.info(f"\tcomponent_decl: {component}")
-                    f_obj.vhdl_component_decl.append(component)
+                    if component not in f_obj.vhdl_component_decl:
+                        log.debug(f'VHDL {loc} component decared {component}')
+                        f_obj.vhdl_component_decl.append(component)
             case "component_inst":
                 for item in found:
                     component = item[1]
-                    f_obj.vhdl_component_deps.append(component)
-                    log.info(f"\tcomponent_inst: {component}")  # Extract component name
+                    if component not in f_obj.vhdl_component_deps:
+                        log.debug(f'VHDL {loc} component {component}')
+                        f_obj.vhdl_component_deps.append(component)
             case "direct_inst":
                 for item in found:
                     l = item[1]
                     if l == LIB_DEFAULT:
                         l = lib
                     name = Name(l, item[2])
-                    f_obj.entity_deps.append(name)
-                    log.info(
-                            f"\tdirect_inst {name}"
-                        )  # Extract library and component names
+                    if name not in f_obj.entity_deps:
+                        log.debug(f'VHDL {loc} requires {name}')
+                        f_obj.entity_deps.append(name)
             case "package_use":
                 for item in found:
                     l = item[0]
                     if l == LIB_DEFAULT:
                         l = lib
                     name = Name(l, item[1])
-                    f_obj.vhdl_package_deps.append(name)
-                    log.info(
-                        f"\tpackage_use {name}"
-                    )  # Extract library and package names`
+                    if name not in f_obj.vhdl_package_deps:
+                        f_obj.vhdl_package_deps.append(name)
+                        log.debug(f'VHDL {loc} requires package {name}')
+                        log.debug(
+                            f"\tpackage_use {name}"
+                        )  # Extract library and package names`
             case _:
                 raise Exception(f"error construct '{construct}'")
 
@@ -653,9 +658,9 @@ class LookupSingular(Lookup): # {{{
         self.top_lib : Optional[str] = None
         self.ignore_components : set[str] = set()
         self.files_2_skip_from_order : set[Path] = set()
-        self.hash_vhdl_file_list = None
-        self.hash_verilog_file_list = None
-        self.hash_other_file_list = None
+        self.vhdl_file_list = None
+        self.verilog_file_list = None
+        self.other_file_list = None
 
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
@@ -710,25 +715,22 @@ class LookupSingular(Lookup): # {{{
         vhdl_file_list = LookupSingular.get_vhdl_file_list_from_config_dict(
             config, toml_loc.parent, top_lib
         )
-        hash_vhdl_file_list = hash(frozenset(vhdl_file_list))
-        if hash_vhdl_file_list != inst.hash_vhdl_file_list:
+        if vhdl_file_list != inst.vhdl_file_list:
             log.info(f'Will not load from pickle as vhdl_file_list has changed')
             return None, vhdl_file_list, None, None
 
         verilog_file_list = LookupSingular.get_verilog_file_list_from_config_dict(
             config, toml_loc.parent, top_lib
         )
-        hash_verilog_file_list = hash(frozenset(verilog_file_list))
-        if hash_vhdl_file_list != inst.hash_vhdl_file_list:
+        if verilog_file_list != inst.verilog_file_list:
             log.info(f'Will not load from pickle as verilog_file_list has changed')
             return None, vhdl_file_list, verilog_file_list, None
 
         other_file_list = LookupSingular.get_other_file_list_from_config_dict(
             config, toml_loc.parent, top_lib=top_lib
         )
-        hash_other_file_list = hash(frozenset(other_file_list))
 
-        if hash_other_file_list != inst.hash_other_file_list:
+        if other_file_list != inst.other_file_list:
             log.info(f'Will not load from pickle as other_file_list has changed')
             return None, vhdl_file_list, verilog_file_list, other_file_list
         
@@ -991,7 +993,7 @@ class LookupSingular(Lookup): # {{{
         return [loc for _, loc in other_File_list_w_lib]
 
     def register_other_file_list(self, other_file_list):
-        self.hash_other_file_list = hash(frozenset(other_file_list))
+        self.other_file_list = other_file_list
         for loc in other_file_list:
             
             f_obj = FileObjOther(loc=loc)
@@ -1001,12 +1003,13 @@ class LookupSingular(Lookup): # {{{
             self.loc_2_file_obj[loc] = f_obj
 
     def register_vhdl_file_list(self, vhdl_file_list : list[str, Path]):
-        self.hash_vhdl_file_list = hash(frozenset(vhdl_file_list))
+        self.vhdl_file_list = vhdl_file_list
+        print(f'NEW: {self.vhdl_file_list=}')
         for lib, loc in vhdl_file_list:
             parse_vhdl_file(self, loc, lib=lib)
 
     def register_verilog_file_list(self, verilog_file_list : list[Path]):
-        self.hash_verilog_file_list = hash(frozenset(verilog_file_list))
+        self.verilog_file_list = verilog_file_list
         for loc in verilog_file_list:
             parse_verilog_file(self, loc)
 
@@ -1126,7 +1129,7 @@ class LookupMulti(LookupSingular):  # {{{
         return look
 
     def register_vhdl_file_list(self, vhdl_file_list:list[Path,str]):
-        self.hash_vhdl_file_list = hash(frozenset(vhdl_file_list))
+        self.vhdl_file_list = vhdl_file_list
         for lib, loc in vhdl_file_list:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is not None:
@@ -1138,7 +1141,7 @@ class LookupMulti(LookupSingular):  # {{{
 
     def register_verilog_file_list(self, verilog_file_list:list[Path]):
         log.debug(f'register_verilog_file_list({verilog_file_list=}) called')
-        self.hash_verilog_file_list = hash(frozenset(verilog_file_list))
+        self.verilog_file_list = verilog_file_list
         for loc in verilog_file_list:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is not None:
@@ -1394,7 +1397,6 @@ def create_lookup_from_toml(
         temp_dir = work_dir.resolve()
         test = temp_dir / toml_loc
         while not test.is_file():
-            print(f'temp_dir {temp_dir}')
             temp_dir = temp_dir.parents[0]
             test = temp_dir / toml_loc
             if test == Path("/"):
@@ -1418,9 +1420,8 @@ def create_lookup_from_toml(
             )
 
     if 'pre_cmds' in config:
-        print(f'pre_cmds')
         for cmd in make_list(config['pre_cmds']):
-            print(f'cmd {cmd}')
+            log.info(f'Running {cmd=}')
             subprocess.check_output(cmd, shell=True, cwd=work_dir)
 
     vhdl_file_list = None
