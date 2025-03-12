@@ -7,13 +7,14 @@ import pickle
 import hashlib
 import chardet
 import fnmatch
-import tomllib
+try: import tomllib
+except ModuleNotFoundError: import tomli as tomllib
 import argparse
 import subprocess
 from pathlib import Path
 from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, List, Tuple, Set
 
 
 #created own crapy logger because logging doesn't work with f strings {{{
@@ -65,28 +66,28 @@ def str_to_name(s: str):
     else:
         raise Exception(f"ERROR converting str {s} to Name")
 
-def contains_any(a: list, b: list) -> bool:
+def contains_any(a: List, b: List) -> bool:
     for aa in a:
         if aa in b:
             return True
     return False
 
 
-def issue_key(good_keys: list, keys: list) -> Optional[str]:
+def issue_key(good_keys: List, keys: List) -> Optional[str]:
     for k in keys:
         if not k in good_keys:
             return k
     return None
 
-def make_list(v) -> list:
-    if isinstance(v, list):
+def make_list(v) -> List:
+    if isinstance(v, List):
         return v
     else:
         return [v]
 
 
-def make_set(v) -> set:
-    if isinstance(v, set):
+def make_set(v) -> Set:
+    if isinstance(v, Set):
         return v
     else:
         return make_list(v)
@@ -94,17 +95,17 @@ def make_set(v) -> set:
 
 # }}}
 
-def process_glob_patterns(patterns: list[str], base_path: str = ".") -> list[Path]: # {{{
+def process_glob_patterns(patterns: List[str], base_path: str = ".") -> List[Path]: # {{{
     """
     Process a list of glob patterns sequentially, including exclusion patterns (starting with '!'),
     to generate a filtered list of file paths. Each pattern modifies the current file list.
     
     Args:
-        patterns (list[str]): list of glob patterns. Patterns starting with '!' are exclusions.
+        patterns (List[str]): list of glob patterns. Patterns starting with '!' are exclusions.
         base_path (str): Base directory to start glob searches from. Defaults to current directory.
     
     Returns:
-        list[str]: list of absolute file paths that match the inclusion patterns but not the exclusion patterns.
+        List[str]: list of absolute file paths that match the inclusion patterns but not the exclusion patterns.
     
     Example:
         patterns = [
@@ -194,8 +195,8 @@ class FileObj:
     def __init__(self, loc: Path):
         self.loc = loc.resolve()
         self.lib = LIB_DEFAULT
-        self.entities: list[Name] = []
-        self.entity_deps: list[Name] = []
+        self.entities: List[Name] = []
+        self.entity_deps: List[Name] = []
         self.modification_time =  self.get_modification_time_on_disk()
         self.f_type : Optional[FileObjType] = None
         self.level = None
@@ -211,7 +212,7 @@ class FileObj:
 
     @property
     def file_type_str(self):
-        return "Unkowen"
+        return "Unknown"
 
     @staticmethod
     def _add_to_f_deps(file_deps, f_obj):
@@ -224,7 +225,7 @@ class FileObj:
         if not skip_loc:
             look.add_loc(self.loc, self)
 
-    def get_file_deps(self, look: Lookup) -> list['FileObj']:
+    def get_file_deps(self, look: Lookup) -> List['FileObj']:
         file_deps = []
         for e in self.entity_deps:
             f_obj = look.get_entity(e, self)
@@ -236,11 +237,11 @@ class FileObj:
 
     def _get_compile_order(
         self, look: Lookup, files_passed=[], components_missed=[], level=0
-    ) -> list['FileObj']:
+    ) -> List['FileObj']:
         files_passed.append(self)
         if self.loc in look.files_2_skip_from_order:
             return []
-        order: list[FileObj] = []
+        order: List[FileObj] = []
         for f_obj in self.get_file_deps(look):
             if f_obj not in files_passed:
                 order += f_obj._get_compile_order(look, files_passed, components_missed = components_missed, level = level + 1)
@@ -249,10 +250,10 @@ class FileObj:
         self.level = level
         return order
 
-    def get_compile_order(self, look: Lookup) -> list['FileObj']:
+    def get_compile_order(self, look: Lookup) -> List['FileObj']:
         return self._get_compile_order(look)
 
-    def update(self) -> tuple[bool, bool]:
+    def update(self) -> Tuple[bool, bool]:
         """Returns True if the dependencies have changed, Returns True if file was modified"""
         if self.requires_update():
             equivalent = True
@@ -290,7 +291,7 @@ class FileObjVerilog(FileObj):
 
     def __init__(self, loc: Path):
         super().__init__(loc)
-        self.verilog_includes : list[FileObjVerilog.VInc] = []
+        self.verilog_includes : List[FileObjVerilog.VInc] = []
         self.f_type : Optional[FileObjType] = FileObjType.VERILOG
 
     @property
@@ -301,12 +302,12 @@ class FileObjVerilog(FileObj):
         super().register_with_lookup(look, skip_loc)
         look.add_verilog_file_name(self.loc.name, self)
 
-    def get_file_deps(self, look: Lookup) -> list[FileObj]:
+    def get_file_deps(self, look: Lookup) -> List[FileObj]:
         file_deps = super().get_file_deps(look)
         # file_deps += self.get_verilog_include_deps(look)
         return file_deps
 
-    def get_verilog_include_deps(self, look : Lookup) -> list[FileObj]:
+    def get_verilog_include_deps(self, look : Lookup) -> List[FileObj]:
         file_deps = []
 
         for name, is_sys in self.verilog_includes:
@@ -341,10 +342,10 @@ class FileObjVhdl(FileObj):
     def __init__(self, loc: Path, lib: str):
         super().__init__(loc)
         self.lib = lib
-        self.vhdl_packages: list[Name] = []
-        self.vhdl_component_decl: list[str] = []
-        self.vhdl_component_deps: list[str] = []
-        self.vhdl_package_deps: list[Name] = []
+        self.vhdl_packages: List[Name] = []
+        self.vhdl_component_decl: List[str] = []
+        self.vhdl_component_deps: List[str] = []
+        self.vhdl_package_deps: List[Name] = []
         self.f_type : Optional[FileObjType] = FileObjType.VERILOG
 
     @property
@@ -356,7 +357,7 @@ class FileObjVhdl(FileObj):
         for p in self.vhdl_packages:
             look.add_vhdl_package(p, self)
 
-    def get_file_deps(self, look: Lookup, components_missed = []) -> list[FileObj]:
+    def get_file_deps(self, look: Lookup, components_missed = []) -> List[FileObj]:
         file_deps = super().get_file_deps(look)
         file_deps += self.get_vhdl_package_deps(look)
 
@@ -376,7 +377,7 @@ class FileObjVhdl(FileObj):
                         components_missed.append(component)
         return file_deps
 
-    def get_vhdl_package_deps(self, look : Lookup) -> list[FileObj]:
+    def get_vhdl_package_deps(self, look : Lookup) -> List[FileObj]:
         file_deps = []
 
         for p in self.vhdl_package_deps:
@@ -403,7 +404,7 @@ class FileObjVhdl(FileObj):
         return result
 
 class ConflictFileObj:
-    def __init__(self, conflict_list: list[FileObj]):
+    def __init__(self, conflict_list: List[FileObj]):
         self.loc_2_file_obj: dict[Path, FileObj] = {}
         for conflict in conflict_list:
             self.add_f_obj(conflict)
@@ -476,54 +477,53 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT) -> FileO
     for key, pattern in vhdl_regex_patterns.items():
         matches[key] = pattern.findall(vhdl)
     for construct, found in matches.items():
-        match construct:
-            case "package_decl":
-                for item in found:
-                    name = Name(lib, item)
-                    if name not in f_obj.vhdl_packages:
-                        log.debug(f'VHDL {loc} declares package {name}')
-                        f_obj.vhdl_packages.append(name)
-            case "entity_decl":
-                for item in found:
-                    name = Name(lib, item)
-                    if name not in f_obj.entities:
-                        f_obj.entities.append(name)
-                        log.debug(f'VHDL {loc} component decared {name}')
-            case "vhdl_component_decl":
-                for item in found:
-                    component = item
-                    if component not in f_obj.vhdl_component_decl:
-                        log.debug(f'VHDL {loc} component decared {component}')
-                        f_obj.vhdl_component_decl.append(component)
-            case "component_inst":
-                for item in found:
-                    component = item[1]
-                    if component not in f_obj.vhdl_component_deps:
-                        log.debug(f'VHDL {loc} component {component}')
-                        f_obj.vhdl_component_deps.append(component)
-            case "direct_inst":
-                for item in found:
-                    l = item[1]
-                    if l == LIB_DEFAULT:
-                        l = lib
-                    name = Name(l, item[2])
-                    if name not in f_obj.entity_deps:
-                        log.debug(f'VHDL {loc} requires {name}')
-                        f_obj.entity_deps.append(name)
-            case "package_use":
-                for item in found:
-                    l = item[0]
-                    if l == LIB_DEFAULT:
-                        l = lib
-                    name = Name(l, item[1])
-                    if name not in f_obj.vhdl_package_deps:
-                        f_obj.vhdl_package_deps.append(name)
-                        log.debug(f'VHDL {loc} requires package {name}')
-                        log.debug(
-                            f"\tpackage_use {name}"
-                        )  # Extract library and package names`
-            case _:
-                raise Exception(f"error construct '{construct}'")
+        if construct == "package_decl":
+            for item in found:
+                name = Name(lib, item)
+                if name not in f_obj.vhdl_packages:
+                    log.debug(f'VHDL {loc} declares package {name}')
+                    f_obj.vhdl_packages.append(name)
+        elif construct == "entity_decl":
+            for item in found:
+                name = Name(lib, item)
+                if name not in f_obj.entities:
+                    f_obj.entities.append(name)
+                    log.debug(f'VHDL {loc} component decared {name}')
+        elif construct == "vhdl_component_decl":
+            for item in found:
+                component = item
+                if component not in f_obj.vhdl_component_decl:
+                    log.debug(f'VHDL {loc} component decared {component}')
+                    f_obj.vhdl_component_decl.append(component)
+        elif construct == "component_inst":
+            for item in found:
+                component = item[1]
+                if component not in f_obj.vhdl_component_deps:
+                    log.debug(f'VHDL {loc} component {component}')
+                    f_obj.vhdl_component_deps.append(component)
+        elif construct == "direct_inst":
+            for item in found:
+                l = item[1]
+                if l == LIB_DEFAULT:
+                    l = lib
+                name = Name(l, item[2])
+                if name not in f_obj.entity_deps:
+                    log.debug(f'VHDL {loc} requires {name}')
+                    f_obj.entity_deps.append(name)
+        elif construct == "package_use":
+            for item in found:
+                l = item[0]
+                if l == LIB_DEFAULT:
+                    l = lib
+                name = Name(l, item[1])
+                if name not in f_obj.vhdl_package_deps:
+                    f_obj.vhdl_package_deps.append(name)
+                    log.debug(f'VHDL {loc} requires package {name}')
+                    log.debug(
+                        f"\tpackage_use {name}"
+                    )  # Extract library and package names`
+        else:
+            raise Exception(f"error construct '{construct}'")
 
     if look is not None:
         f_obj.register_with_lookup(look)
@@ -650,14 +650,14 @@ class LookupSingular(Lookup): # {{{
         self.entity_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.loc_2_file_obj: dict[Path, FileObjLookup] = {}
         self.verilog_file_name_2_file_obj : dict[str : FileObjVerilog] = {}
-        self.ignore_set_libs: set[str] = set()
-        self.ignore_set_packages: set[Name] = set()
-        self.ignore_set_entities: set[Name] = set()
+        self.ignore_set_libs: Set[str] = set()
+        self.ignore_set_packages: Set[Name] = set()
+        self.ignore_set_entities: Set[Name] = set()
         self.toml_loc: Optional[Path] = None
         self.toml_modification_time = None
         self.top_lib : Optional[str] = None
-        self.ignore_components : set[str] = set()
-        self.files_2_skip_from_order : set[Path] = set()
+        self.ignore_components : Set[str] = set()
+        self.files_2_skip_from_order : Set[Path] = set()
         self.vhdl_file_list = None
         self.verilog_file_list = None
         self.other_file_list = None
@@ -777,12 +777,12 @@ class LookupSingular(Lookup): # {{{
         c_val = config[key]
         if isinstance(c_val, dict):
             for lib, val in c_val.items():
-                if isinstance(val, list):
+                if isinstance(val, List):
                     for v in val:
                         callback(lib, v)
                 else:
                     callback(lib, val)
-        elif isinstance(c_val, list):
+        elif isinstance(c_val, List):
             for v in c_val:
                 callback(top_lib, v)
         else:
@@ -791,7 +791,7 @@ class LookupSingular(Lookup): # {{{
     @staticmethod
     def extract_set_str_from_config(
         config: dict, key: str
-    ) -> set[str]:
+    ) -> Set[str]:
         if key not in config:
             return set()
         val = config[key]
@@ -801,7 +801,7 @@ class LookupSingular(Lookup): # {{{
 
     def extract_set_name_from_config(
         config: dict, key: str, top_lib : Optional[str]
-    ) -> set[Name]:
+    ) -> Set[Name]:
         l = []
 
         def call_back_func(lib: str, name: str):
@@ -1002,13 +1002,13 @@ class LookupSingular(Lookup): # {{{
             self.entity_name_2_file_obj[entity_name] = f_obj
             self.loc_2_file_obj[loc] = f_obj
 
-    def register_vhdl_file_list(self, vhdl_file_list : list[str, Path]):
+    def register_vhdl_file_list(self, vhdl_file_list : List[Tuple[str, Path]]):
         self.vhdl_file_list = vhdl_file_list
         print(f'NEW: {self.vhdl_file_list=}')
         for lib, loc in vhdl_file_list:
             parse_vhdl_file(self, loc, lib=lib)
 
-    def register_verilog_file_list(self, verilog_file_list : list[Path]):
+    def register_verilog_file_list(self, verilog_file_list : List[Path]):
         self.verilog_file_list = verilog_file_list
         for loc in verilog_file_list:
             parse_verilog_file(self, loc)
@@ -1112,7 +1112,7 @@ class LookupMulti(LookupSingular):  # {{{
     TOML_KEYS = ["sub"]
 
     def __init__(
-            self, look_subs: list[LookupSingular]): #, file_list: list[tuple[str, Path]] = [] ):
+            self, look_subs: List[LookupSingular]): #, file_list: List[Tuple[str, Path]] = [] ):
         log.debug('LookupMulti::__init__')
         self.look_subs = look_subs
         super().__init__(allow_duplicates=True)
@@ -1128,7 +1128,7 @@ class LookupMulti(LookupSingular):  # {{{
         look.initalise_from_config_dict(config, work_dir, **kwargs)
         return look
 
-    def register_vhdl_file_list(self, vhdl_file_list:list[Path,str]):
+    def register_vhdl_file_list(self, vhdl_file_list:List[Tuple[Path,str]]):
         self.vhdl_file_list = vhdl_file_list
         for lib, loc in vhdl_file_list:
             f_obj = self._get_loc_from_common(loc)
@@ -1139,7 +1139,7 @@ class LookupMulti(LookupSingular):  # {{{
                 # not passed in common lookup pass in prj lookup
                 f_obj = parse_vhdl_file(self, loc, lib=lib)
 
-    def register_verilog_file_list(self, verilog_file_list:list[Path]):
+    def register_verilog_file_list(self, verilog_file_list:List[Path]):
         log.debug(f'register_verilog_file_list({verilog_file_list=}) called')
         self.verilog_file_list = verilog_file_list
         for loc in verilog_file_list:
@@ -1224,7 +1224,7 @@ class LookupPrj(LookupMulti): #{{{
     TOML_KEYS = ["top_vhdl_file", "top_verilog_file", "top_entity"]
 
     def __init__(
-            self, look_subs: list[LookupMulti]) : #, file_list: list[tuple[str, Path]] = [] ):
+            self, look_subs: List[LookupMulti]) : #, file_list: List[Tuple[str, Path]] = [] ):
         log.debug('LookupPrj::__init__')
         super().__init__(look_subs)
         self.f_obj_top = None
@@ -1337,7 +1337,7 @@ class LookupPrj(LookupMulti): #{{{
                     "top_file must be declared in config or on command line"
                 )
 
-            self._compile_order = self.f_obj_top.get_compile_order(look)
+            self._compile_order = self.f_obj_top.get_compile_order(self)
         return self._compile_order
 
     def print_compile_order(self):
@@ -1388,7 +1388,7 @@ def create_lookup_from_toml(
             log.info('f adding .toml suffix/extension to {toml_loc}')
             toml_loc = toml_loc.with_suffix('.toml')
         else:
-            raise Exception(f'{toml_loc} expected suffix .toml or .json but got {toml_lox.suffix}')
+            raise Exception(f'{toml_loc} expected suffix .toml or .json but got {toml_loc.suffix}')
         
     if not toml_loc.is_file():
         if toml_loc.is_absolute() or work_dir is None:
@@ -1471,8 +1471,8 @@ def create_lookup_from_toml(
     return inst
 # }}}
 
-# {{{ Main method handeling
-def extract_lib_compiler_order(s)-> tuple[str, str]:
+# {{{ Main method handling
+def extract_lib_compiler_order(s)-> Tuple[str, str]:
     try:
         lib, f = s.split(':')
         return lib, f
@@ -1485,24 +1485,24 @@ def set_log_level_from_verbose(args):
     if args.verbose is not None:
         log_level = args.verbose
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="VHDL dependency parser")
+def hdldepends():
+    parser = argparse.ArgumentParser(description="HDL dependency parser")
 
     parser.add_argument(
-        "-v", "--verbose", action="count", help="verbose level... repeat up to two times"
+        "-v", "--verbose", action="count", help="Verbose level, repeat up to two times"
     )
     parser.add_argument("-c", "--clear-pickle", action="store_true", help="Delete pickle cache files first.")
-    parser.add_argument("--no-pickle", action="store_true", help="No not write or read any pickle caches") 
+    parser.add_argument("--no-pickle", action="store_true", help="Do not write or read any pickle caches") 
     parser.add_argument(
         "config_file",
         nargs="+",  # Allows one or more files
         type=str,
         help="Paths to / File Names of, the config TOML input file(s).",
     )
-    parser.add_argument("--top-vhdl-file", type=str, help="top level file to use")
-    parser.add_argument("--top-verilog-file", type=str, help="top level file to use")
-    parser.add_argument("--top-entity", type=str, help="top entity to use")
-    parser.add_argument("--top-lib", type=str, help="top level library")
+    parser.add_argument("--top-vhdl-file", type=str, help="Top level file to use")
+    parser.add_argument("--top-verilog-file", type=str, help="Top level file to use")
+    parser.add_argument("--top-entity", type=str, help="Top entity to use")
+    parser.add_argument("--top-lib", type=str, help="Top level library")
     parser.add_argument(
         "--compile-order", type=str, help="Path to the compile order output file."
     )
@@ -1510,13 +1510,13 @@ if __name__ == "__main__":
         "--compile-order-vhdl", type=str, help="Path to the VHDL compile order output file."
     )
     parser.add_argument(
-        "--compile-order-verilog", type=str, help="Path to the verilog compile order output file"
+        "--compile-order-verilog", type=str, help="Path to the Verilog compile order output file"
     )
     parser.add_argument(
-        "--compile-order-lib", nargs ="+", type=extract_lib_compiler_order, help="expects 'lib:file' where 'file' is location to write the compile order of libary 'lib'."
+        "--compile-order-lib", nargs ="+", type=extract_lib_compiler_order, help="Expects 'lib:file' where 'file' is location to write the compile order of libary 'lib'."
     )
     parser.add_argument(
-        "--compile-order-vhdl-lib", nargs ="+", type=extract_lib_compiler_order, help="expects 'lib:file' where 'file' is location to write the VHDL compile order of libary 'lib'."
+        "--compile-order-vhdl-lib", nargs ="+", type=extract_lib_compiler_order, help="Expects 'lib:file' where 'file' is location to write the VHDL compile order of libary 'lib'."
     )
     parser.add_argument(
         "--file-list", type=str, help="Output full file list of in project"
@@ -1525,13 +1525,13 @@ if __name__ == "__main__":
         "--file-list-vhdl", type=str, help="Output full VHDL file list of in project"
     )
     parser.add_argument(
-        "--file-list-verilog", type=str, help="Output verilog list of in project"
+        "--file-list-verilog", type=str, help="Output Verilog list of in project"
     )
     parser.add_argument(
-        "--file-list-lib", nargs ="+", type=extract_lib_compiler_order, help="expects 'lib:file' where 'file' is location to write the file list of library 'lib'."
+        "--file-list-lib", nargs ="+", type=extract_lib_compiler_order, help="Expects 'lib:file' where 'file' is location to write the file list of library 'lib'."
     )
     parser.add_argument(
-        "--file-list-vhdl-lib", nargs ="+", type=extract_lib_compiler_order, help="expects 'lib:file' where 'file' is location to write the VHDL file list of library 'lib'."
+        "--file-list-vhdl-lib", nargs ="+", type=extract_lib_compiler_order, help="Expects 'lib:file' where 'file' is location to write the VHDL file list of library 'lib'."
     )
 
     args = parser.parse_args()
@@ -1548,20 +1548,21 @@ if __name__ == "__main__":
 
     attemp_read_pickle = not args.clear_pickle and not args.no_pickle
     write_pickle = not args.no_pickle
-    if len(args.config_file) == 1:
-        log.debug('creating top level project toml')
-        look = create_lookup_from_toml(Path(args.config_file[0]), work_dir=work_dir,
-           force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
-       )
-    else:
-        look_subs = []
-        for c_toml in look_subs:
-            look_subs.append(
-                create_lookup_from_toml(
-                    Path(c_toml), work_dir=work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
+    if args.config_file:
+        if len(args.config_file) == 1:
+            log.debug('creating top level project toml')
+            look = create_lookup_from_toml(Path(args.config_file[0]), work_dir=work_dir,
+            force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
+        )
+        else:
+            look_subs = []
+            for c_toml in look_subs:
+                look_subs.append(
+                    create_lookup_from_toml(
+                        Path(c_toml), work_dir=work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
+                    )
                 )
-            )
-        look = LookupPrj(look_subs)
+            look = LookupPrj(look_subs)
 
     if args.top_vhdl_file:
         look.set_top_vhdl_file(Path(args.top_vhdl_file), "work")
@@ -1589,7 +1590,7 @@ if __name__ == "__main__":
         look.write_file_list(Path(f), FileObjType.VERILOG)
 
     if args.file_list_lib is not None:
-        for lib, f in args.compile_order_lib:
+        for lib, f in args.compile_order_vhdl_lib:
             look.write_file_list(Path(f), None, lib)
 
     if args.file_list_vhdl_lib is not None:
@@ -1610,7 +1611,10 @@ if __name__ == "__main__":
         look.write_compile_order(Path(args.compile_order), FileObjType.VERILOG)
 
     if args.compile_order_vhdl_lib is not None:
-        for lib, f in args.compile_order_lib:
+        for lib, f in args.compile_order_vhdl_lib:
             look.write_compile_order_lib(Path(f), lib, FileObjType.VHDL)
+
+if __name__ == "__main__":
+    hdldepends()
             
 # }}}

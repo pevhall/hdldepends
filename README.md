@@ -1,21 +1,32 @@
 # `hdldepends`
-Simple python script to find VHDL file dependencies. I intend to cover Verilog as well at a latter date
+Simple python script to find HDL file dependencies.
 
 # Install
-Currently there is no install. This is something I may add later. The whole program is contained within one python script. Dependency to run the script is Python >=3.11
+```sh
+git clone https://github.com/pevhall/hdldepends.git
+cd hdldepends
+pip install .
+```
+Dependency to run the script is Python >=3.8
+
+# Running `hdldepends`
+```sh
+hdldepends path/to/config/file
+```
+For more information about available command line parameters refer to the built-in help (`hdldepends -h`) or see sections below.
 
 # Configuration files
 Contain the project information include which files are include and from which libraries. These can be written in json or toml.
 
 ## Options tags
-This is a list of all the allowed flags for the configuration files
+This is a list of all the allowed flags for the configuration files.
 
 For tags that accept a *library* dictionary, then the dictionary key is the library name. The dictionary value can be a list to contain more then one item to connect to the library. If no dictionary is not specified then the default `work` library is assumed.
 
 ### `pre_cmds`
 Pre-commands are commands to run before other tags are processed.
 
-This tag accepts a list or a single value
+This tag accepts a list or a single value.
 
 The major purpose of this is to automatically update files referenced by tag `file_list_files`. An example of `pre_cmds` could be.
 ```
@@ -25,7 +36,7 @@ This will place all `.vhd` files paths into fw-files_work.txt.
 
 
 ### `vhdl_files_glob`
-Glob for files in the directory structure. Globs are run in order, place a '!' as the frist character to remove matching files from the list. (works similar to gitignore)
+Glob for files in the directory structure. Globs are run in order, place a '!' as the first character to remove matching files from the list. (works similar to gitignore)
 
 This tag accepts a *library* dictionary list or single value.
 
@@ -42,12 +53,12 @@ File list of files is a tag which points to file containing a list of file paths
 This tag accepts a *library* dictionary list or single value.
 
 ### `vhdl_files`
-Vhdl files contain a list of VHDL files to add to the project;
+Vhdl files contain a list of VHDL files to add to the project.
 
 This tag accepts a *library* dictionary list or single value.
 
 ### `verilog_files_glob`
-Glob for files in the directory structure. Globs are run in order, place a '!' as the frist character to remove matching files from the list. (works similar to gitignore)
+Glob for files in the directory structure. Globs are run in order, place a '!' as the first character to remove matching files from the list. (works similar to gitignore)
 
 This tag accepts a list or single value.
 
@@ -57,12 +68,12 @@ File list of files is a tag which points to file containing a list of file paths
 This tag accepts a list or single value.
 
 ### `verilog_files`
-Verilog files contain a list of Verilog files to add to the project;
+Verilog files contain a list of Verilog files to add to the project.
 
 This tag accepts list or single value.
 
 ### `other_files_glob`
-Glob for external dependencies in the directory structure. See `glob_files` and `other_files_file`
+Glob for external dependencies in the directory structure. See `glob_files` and `other_files_file`.
 
 This tag accepts a *library* dictionary list or single value.
 
@@ -185,7 +196,6 @@ The compile order command line option accepts a location to a file not yet creat
 
 ### `--compile-order-verilog`
 The compile order command line option accepts a location to a file not yet created. The project compile order will be exported to this file. Each line containing absolute path to file under question.
-
 
 ### `--compile-order-lib`
 The compile order library option exports the compile order for one particular library. The option accepts *lib:file* where lib is the library to export and file is the location to export the compile order. Each line of the created file will contain the absolute path to a file.
