@@ -1,18 +1,27 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "hdl_depends"
-version = "0.0.1"
+name = "hdldepends"
+version = "0.0.2"
 authors = [
   { name="Pev Hall", email="pev.hall@gmail.com" },
 ]
 description = "A small package to find HDL file dependencies"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.8"
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
 ]
-license = "MIT"
-license-files = ["LICEN[CS]E*"]
+dependencies = [
+  "chardet", 
+  "tomli; python_version<'3.10'"
+]
+
+[project.scripts]
+hdldepends = "hdldepends.hdldepends:hdldepends"
 
 [project.urls]
 Homepage = "https://github.com/pevhall/hdldepends"
