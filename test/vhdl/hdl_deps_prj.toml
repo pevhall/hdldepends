@@ -7,4 +7,4 @@ top_entity = 'del'
 vhdl_files = './del3.vhd'
 verilog_files = './counter.v'
 
-package_file_skip_order = { xpm ='xpm_VCOMP.vhd'}
+package_file_skip_order = { xpm ='{VIV_LIB}/xpm_VCOMP.vhd'}

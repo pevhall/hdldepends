@@ -1,11 +1,11 @@
 # vi: foldmethod=marker
+import os
 import re
 import sys
 import glob
 import json
 import pickle
 import hashlib
-import chardet
 import fnmatch
 try: import tomllib
 except ModuleNotFoundError: import tomli as tomllib
@@ -42,17 +42,18 @@ class log:
 #}}}
 
 # Utility function {{{
-def detect_encoding(file_path:Path):
-    with open(file_path, 'rb') as f:
-        raw_data = f.read()
-        result = chardet.detect(raw_data)
-        return result['encoding']
-
-def path_from_dir(dir: Path, loc: Path):
+def path_abs_from_dir(dir: Path, loc: Path):
+    loc = Path(str(loc).format(**os.environ))
+    # dir = Path(os.path.expandvars(str(dir)))
     if not loc.is_absolute():
         loc = dir / loc
+        loc = loc.resolve()
     return loc
 
+def resolve_abs_path(dir: Path):
+    if not dir.is_absolute():
+        dir = dir.resolve()
+    return dir
 
 def get_file_modification_time(f: Path) -> int:
     return f.lstat().st_mtime
@@ -115,7 +116,7 @@ def process_glob_patterns(patterns: List[str], base_path: str = ".") -> List[Pat
         ]
         files = process_glob_patterns(patterns)
     """
-    base_path = Path(base_path).resolve()  # Get absolute path of base directory
+    base_path = resolve_abs_path(base_path) # Get absolute path of base directory
     current_files = set()
 
     # Process patterns sequentially
@@ -136,7 +137,7 @@ def process_glob_patterns(patterns: List[str], base_path: str = ".") -> List[Pat
         else:
             # Handle inclusion pattern - add new matching files
             matched_files = glob.glob(str(base_path / pattern), recursive=True)
-            current_files.update(Path(f).resolve() for f in matched_files)
+            current_files.update(resolve_abs_path(Path(f)) for f in matched_files)
 
     # Return sorted list of absolute paths
     return sorted(current_files)
@@ -193,7 +194,7 @@ class FileObjType(Enum):
 
 class FileObj:
     def __init__(self, loc: Path):
-        self.loc = loc.resolve()
+        self.loc = resolve_abs_path(loc)
         self.lib = LIB_DEFAULT
         self.entities: List[Name] = []
         self.entity_deps: List[Name] = []
@@ -346,7 +347,7 @@ class FileObjVhdl(FileObj):
         self.vhdl_component_decl: List[str] = []
         self.vhdl_component_deps: List[str] = []
         self.vhdl_package_deps: List[Name] = []
-        self.f_type : Optional[FileObjType] = FileObjType.VERILOG
+        self.f_type : Optional[FileObjType] = FileObjType.VHDL
 
     @property
     def file_type_str(self):
@@ -467,8 +468,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT) -> FileO
     """ Function to find matches in the VHDL code """
 
     log.info(f"passing VHDL file {loc}:")
-    with open(loc, "r") as file:
-        vhdl = file.read()
+    vhdl = read_text_file_contents(loc)
 
     vhdl = vhdl_remove_comments(vhdl)
     f_obj = FileObjVhdl(loc, lib=lib)
@@ -588,15 +588,30 @@ def verilog_extract_module_declarations(verilog_code):
     
     return declarations
 
+def read_text_file_contents(loc : Path):
+    
+    encodings = ['utf-8', 'utf-16', 'utf-32']
+    for enc in encodings:
+        try:
+            log.debug(f'Opening {loc} with encoding {enc}')
+            with open(loc, encoding=enc) as f:
+                return f.read()
+        except UnicodeDecodeError:
+            print(f'Trying next codec')
+    log.debug(f'Could not open {loc} with one of these {encodings}')
+    raise UnicodeDecodeError(f'Could not decode file {loc}')
+
+
 def parse_verilog_file(look : Optional[Lookup], loc : Path) -> FileObjVerilog:
     log.info(f"passing Verilog file {loc}:")
 
     if loc.suffix != '.v':
         log.warning(f'unexpected verilog extension on {loc} expected .v')
 
-    with open(loc, "r", encoding=detect_encoding(loc)) as file:
-        verilog_code = file.read()
-
+    # with open(loc, "r", encoding=detect_encoding(loc)) as file:
+    #     verilog_code = file.read()
+    verilog_code = read_text_file_contents(loc)
+    
     clean_code = verilog_remove_comments(verilog_code)
 
     
@@ -640,7 +655,7 @@ class LookupSingular(Lookup): # {{{
         "other_files_file",
         "other_files_glob"
     ]
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self, allow_duplicates: bool = True):
         log.debug('LookupSingular::__init__')
@@ -843,8 +858,7 @@ class LookupSingular(Lookup): # {{{
             )
 
         def add_file_to_list_skip_order(lib, loc_str):
-            loc = path_from_dir(work_dir, Path(loc_str))
-            loc = loc.resolve()
+            loc = path_abs_from_dir(work_dir, Path(loc_str))
             self.files_2_skip_from_order.add(loc)
 
         LookupSingular._process_config_opt_lib(
@@ -861,13 +875,13 @@ class LookupSingular(Lookup): # {{{
         vhdl_file_list = []
 
         def add_file_to_list(lib, loc_str):
-            loc = path_from_dir(work_dir, Path(loc_str))
+            loc = path_abs_from_dir(work_dir, Path(loc_str))
             vhdl_file_list.append((lib, loc))
 
         LookupSingular._process_config_opt_lib(config, "vhdl_files", add_file_to_list, top_lib=top_lib)
 
         def add_file_to_list_skip_order(lib, loc_str):
-            loc = path_from_dir(work_dir, Path(loc_str))
+            loc = path_abs_from_dir(work_dir, Path(loc_str))
             vhdl_file_list.append((lib, loc))
 
         LookupSingular._process_config_opt_lib(
@@ -877,11 +891,11 @@ class LookupSingular(Lookup): # {{{
 
         def add_file_list_to_list(lib, f_str):
             fl_loc = Path(f_str)
-            fl_loc = path_from_dir(work_dir, fl_loc).resolve()
+            fl_loc = path_abs_from_dir(work_dir, fl_loc)
             with open(fl_loc, "r") as f_list_file:
                 for loc_str in f_list_file:
                     loc_str = loc_str.strip()
-                    loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
+                    loc = path_abs_from_dir(fl_loc.parents[0], Path(loc_str))
                     vhdl_file_list.append((lib, loc))
 
         LookupSingular._process_config_opt_lib(
@@ -901,7 +915,7 @@ class LookupSingular(Lookup): # {{{
         for lib, glob_str_list in glob_str_dict.items():
             loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
             for loc_rel in loc_rel_list:
-                loc = path_from_dir(work_dir, loc_rel).resolve()
+                loc = path_abs_from_dir(work_dir, loc_rel)
                 vhdl_file_list.append((lib, loc))
         
         return vhdl_file_list
@@ -912,18 +926,18 @@ class LookupSingular(Lookup): # {{{
         verilog_file_list_w_lib = []
 
         def add_file_to_list(lib, loc_str):
-            loc = path_from_dir(work_dir, Path(loc_str))
+            loc = path_abs_from_dir(work_dir, Path(loc_str))
             verilog_file_list_w_lib.append((lib, loc))
 
         LookupSingular._process_config_opt_lib(config, "verilog_files", add_file_to_list, top_lib=top_lib)
 
         def add_file_list_to_list(lib, f_str):
             fl_loc = Path(f_str)
-            fl_loc = path_from_dir(work_dir, fl_loc).resolve()
+            fl_loc = path_abs_from_dir(work_dir, fl_loc)
             with open(fl_loc, "r") as f_list_file:
                 for loc_str in f_list_file:
                     loc_str = loc_str.strip()
-                    loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
+                    loc = path_abs_from_dir(fl_loc.parents[0], Path(loc_str))
                     verilog_file_list_w_lib.append((lib, loc))
 
         LookupSingular._process_config_opt_lib(
@@ -943,7 +957,7 @@ class LookupSingular(Lookup): # {{{
         for lib, glob_str_list in glob_str_dict.items():
             loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
             for loc_rel in loc_rel_list:
-                loc = path_from_dir(work_dir, loc_rel).resolve()
+                loc = path_abs_from_dir(work_dir, loc_rel)
                 verilog_file_list_w_lib.append((lib, loc))
         
         for lib, loc in verilog_file_list_w_lib:
@@ -959,11 +973,11 @@ class LookupSingular(Lookup): # {{{
         other_File_list_w_lib = []
         def add_ext_dep_file_to_list(lib, f_str):
             fl_loc = Path(f_str)
-            fl_loc = path_from_dir(work_dir, fl_loc).resolve()
+            fl_loc = path_abs_from_dir(work_dir, fl_loc)
             with open(fl_loc, "r") as f_list_file:
                 for loc_str in f_list_file:
                     loc_str = loc_str.strip()
-                    loc = path_from_dir(fl_loc.parents[0], Path(loc_str))
+                    loc = path_abs_from_dir(fl_loc.parents[0], Path(loc_str))
                     other_File_list_w_lib.append((lib, loc))
                     
         LookupSingular._process_config_opt_lib(
@@ -983,7 +997,7 @@ class LookupSingular(Lookup): # {{{
         for lib, glob_str_list in glob_str_dict.items():
             loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
             for loc_rel in loc_rel_list:
-                loc = path_from_dir(work_dir, loc_rel).resolve()
+                loc = path_abs_from_dir(work_dir, loc_rel)
                 other_File_list_w_lib.append((lib, loc))
 
         for lib, loc in other_File_list_w_lib:
@@ -1029,18 +1043,18 @@ class LookupSingular(Lookup): # {{{
         self._add_to_dict(self.entity_name_2_file_obj, name, f_obj)
 
     def add_loc(self, loc: Path, f_obj: FileObj):
-        loc = loc.resolve()
+        loc = resolve_abs_path(loc)
         self._add_to_dict(self.loc_2_file_obj, loc, f_obj)
 
     def add_verilog_file_name(self, file_name: str, f_obj : FileObjVerilog):
         self._add_to_dict(self.verilog_file_name_2_file_obj, file_name, f_obj)
 
     def get_loc(self, loc: Path):
-        loc = loc.resolve()
+        loc = resolve_abs_path(loc)
         return self.loc_2_file_obj[loc]
 
     def has_loc(self, loc: Path):
-        loc = loc.resolve()
+        loc = resolve_abs_path(loc)
         return loc in self.loc_2_file_obj
 
     def get_vhdl_package(self, name: Name, f_obj_required_by : Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
@@ -1089,7 +1103,7 @@ class LookupSingular(Lookup): # {{{
     def get_file_list(self, lib:Optional[str]=None):
         file_list = []
         for f_obj in self.loc_2_file_obj.values():
-            if f_obj.loc in look.files_2_skip_from_order:
+            if f_obj.loc in self.files_2_skip_from_order:
                 continue #skip
             if lib is None or lib == f_obj.lib:
                 file_list.append(f_obj)
@@ -1394,13 +1408,14 @@ def create_lookup_from_toml(
         if toml_loc.is_absolute() or work_dir is None:
             raise FileNotFoundError(f"ERROR could not find file {toml_loc}")
         log.info(f"tring to find {toml_loc} in previouse directoires")
-        temp_dir = work_dir.resolve()
+        temp_dir = resolve_abs_path(work_dir)
         test = temp_dir / toml_loc
         while not test.is_file():
-            temp_dir = temp_dir.parents[0]
-            test = temp_dir / toml_loc
-            if test == Path("/"):
+            try:
+                temp_dir = temp_dir.parents[0]
+            except IndexError:
                 raise FileNotFoundError(f"ERROR could not find file {toml_loc}")
+            test = temp_dir / toml_loc
         toml_loc = test
 
 
@@ -1584,17 +1599,17 @@ def hdldepends():
         look.write_file_list(Path(args.file_list))
 
     if args.file_list_vhdl is not None:
-        look.write_file_list(Path(f), FileObjType.VHDL)
+        look.write_file_list(Path(args.file_list_vhdl), FileObjType.VHDL)
 
     if args.file_list_verilog is not None:
-        look.write_file_list(Path(f), FileObjType.VERILOG)
+        look.write_file_list(Path(args.file_list_verilog), FileObjType.VERILOG)
 
     if args.file_list_lib is not None:
-        for lib, f in args.compile_order_vhdl_lib:
+        for lib, f in args.file_list_lib:
             look.write_file_list(Path(f), None, lib)
 
     if args.file_list_vhdl_lib is not None:
-        for lib, f in args.compile_order_lib:
+        for lib, f in args.file_list_vhdl_lib:
             look.write_file_list(Path(f), FileObjType.VHDL, lib)
 
     if args.compile_order is not None:
@@ -1605,10 +1620,10 @@ def hdldepends():
             look.write_compile_order_lib(Path(f), lib)
 
     if args.compile_order_vhdl is not None:
-        look.write_compile_order(Path(args.compile_order), FileObjType.VHDL)
+        look.write_compile_order(Path(args.compile_order_vhdl), FileObjType.VHDL)
 
     if args.compile_order_verilog is not None:
-        look.write_compile_order(Path(args.compile_order), FileObjType.VERILOG)
+        look.write_compile_order(Path(args.compile_order_verilog), FileObjType.VERILOG)
 
     if args.compile_order_vhdl_lib is not None:
         for lib, f in args.compile_order_vhdl_lib:
