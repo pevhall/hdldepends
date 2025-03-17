@@ -41,7 +41,7 @@ class log:
             log._log('DEBUG', *args, **kwargs)
 #}}}
 
-# Utility function {{{
+# Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
     loc = Path(str(loc).format(**os.environ))
     # dir = Path(os.path.expandvars(str(dir)))
@@ -92,6 +92,19 @@ def make_set(v) -> Set:
         return v
     else:
         return make_list(v)
+
+def read_text_file_contents(loc : Path):
+    
+    encodings = ['utf-8', 'iso-8859-1','windows-1251', 'windows-1252' ,'gb2312' ,'utf-16']
+    for enc in encodings:
+        try:
+            log.debug(f'Opening {loc} with encoding {enc}')
+            with open(loc, encoding=enc) as f:
+                return f.read()
+        except (UnicodeDecodeError, UnicodeError):
+            print(f'Trying next codec')
+    log.debug(f'Could not open {loc} with one of these {encodings}')
+    raise RuntimeError(f'Could not decode file {loc}')
 
 
 # }}}
@@ -358,26 +371,40 @@ class FileObjVhdl(FileObj):
         for p in self.vhdl_packages:
             look.add_vhdl_package(p, self)
 
+
     def get_file_deps(self, look: Lookup, components_missed = []) -> List[FileObj]:
         file_deps = super().get_file_deps(look)
         file_deps += self.get_vhdl_package_deps(look)
-
+ 
         if len(self.vhdl_component_deps) > 0:
             file_package_deps = self.get_vhdl_package_deps(look)
             for component in self.vhdl_component_deps:
                 if component in look.ignore_components:
                     continue
                 found = False
-                for f_obj in file_package_deps:
-                    if component in f_obj.vhdl_component_decl:
-                        found = True
-                        break
+                f_obj = None
+                try:
+                    f_obj = look.get_entity(Name(self.lib, component), self)
+                except KeyError:
+                    pass
+                if f_obj is None:
+                    try:
+                        f_obj = look.get_entity(Name(LIB_DEFAULT, component), self)
+                    except KeyError:
+                        pass
+                if f_obj is not None:
+                    found = True
+                    file_deps.append(f_obj)
+                else:
+                    for f_obj in file_package_deps:
+                        if component in f_obj.vhdl_component_decl:
+                            found = True
+                            break
                 if not found:
                     if component not in components_missed:
                         log.warning(f'File {self.loc} cannot find component declartion for component dependency {component}')
                         components_missed.append(component)
         return file_deps
-
     def get_vhdl_package_deps(self, look : Lookup) -> List[FileObj]:
         file_deps = []
 
@@ -427,6 +454,7 @@ FileObjLookup = Union[ConflictFileObj, FileObj]
 
 # }}}
 
+# VHDL file parsing {{{
 def vhdl_remove_comments(vhdl_code: str) -> str:
     # Remove single-line comments
     code_without_single_comments = re.sub(r'--.*$', '', vhdl_code, flags=re.MULTILINE)
@@ -458,7 +486,6 @@ def vhdl_remove_protected_code(vhdl_code:str) -> str:
     else:
         return vhdl_code
 
-# VHDL file parsing {{{
 vhdl_regex_patterns = {
     "package_decl": re.compile(
         r"\s*package\s+(\w+)\s+is.*?end\s+(?:package|\1)",
@@ -554,6 +581,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT) -> FileO
 
 # }}}
 
+# Verilog file parsing {{{
 # Pre-process Verilog code to remove comments
 def verilog_remove_comments(verilog_code):
     # Remove single-line comments
@@ -610,19 +638,6 @@ def verilog_extract_module_declarations(verilog_code):
     
     return declarations
 
-def read_text_file_contents(loc : Path):
-    
-    encodings = ['utf-8', 'utf-16', 'utf-32']
-    for enc in encodings:
-        try:
-            log.debug(f'Opening {loc} with encoding {enc}')
-            with open(loc, encoding=enc) as f:
-                return f.read()
-        except UnicodeDecodeError:
-            print(f'Trying next codec')
-    log.debug(f'Could not open {loc} with one of these {encodings}')
-    raise UnicodeDecodeError(f'Could not decode file {loc}')
-
 
 def parse_verilog_file(look : Optional[Lookup], loc : Path) -> FileObjVerilog:
     log.info(f"passing Verilog file {loc}:")
@@ -658,7 +673,7 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path) -> FileObjVerilog:
     if look is not None:
         f_obj.register_with_lookup(look)
     return f_obj
-
+#}}}
 
 class LookupSingular(Lookup): # {{{
     TOML_KEYS = [
@@ -1356,7 +1371,7 @@ class LookupPrj(LookupMulti): #{{{
             if isinstance(f_obj, FileObjVhdl):
                 log.info(f'top_entity {name} found in vhdl file {f_obj.loc}')
                 self.set_top_vhdl_file(f_obj.loc, f_obj.lib)
-            elif isintance(f_obj, FileObjVerilog):
+            elif isinstance(f_obj, FileObjVerilog):
                 log.info(f'top_entity {name} found in verilog file {f_obj.loc}')
                 self.set_top_verilog_file(f_obj.loc)
             else:
@@ -1379,7 +1394,7 @@ class LookupPrj(LookupMulti): #{{{
     def print_compile_order(self):
         print("compile order:")
         for f_obj in self.compile_order:
-            print(f'  {f_obj.file_type_str+":":10} {"|---"*f_obj.level}{f_obj.lib}:{f_obj.loc}')
+            print(f'  {f_obj.file_type_str+":":10} {"|---"*f_obj.level}{f_obj.lib}: {f_obj.loc}')
 
     def write_compile_order(self, compile_order_loc: Path, f_type : Optional[FileObjType]=None):
         with open(compile_order_loc, "w") as f_order:
@@ -1645,7 +1660,7 @@ def hdldepends():
         look.write_compile_order(Path(args.compile_order_vhdl), FileObjType.VHDL)
 
     if args.compile_order_verilog is not None:
-        look.write_compile_order(Path(args.compile_order_verilog), FileObjType.VERILOG)
+        look.write_compile_order_lib(Path(args.compile_order_verilog), LIB_DEFAULT, FileObjType.VERILOG)
 
     if args.compile_order_vhdl_lib is not None:
         for lib, f in args.compile_order_vhdl_lib:
