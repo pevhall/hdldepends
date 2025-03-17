@@ -427,15 +427,36 @@ FileObjLookup = Union[ConflictFileObj, FileObj]
 
 # }}}
 
-def vhdl_remove_comments(verilog_code):
+def vhdl_remove_comments(vhdl_code: str) -> str:
     # Remove single-line comments
-    code_without_single_comments = re.sub(r'--.*$', '', verilog_code, flags=re.MULTILINE)
+    code_without_single_comments = re.sub(r'--.*$', '', vhdl_code, flags=re.MULTILINE)
     
     # Remove multi-line comments
     code_without_comments = re.sub(r'/\*.*?\*/', '', code_without_single_comments, flags=re.DOTALL)
     
     return code_without_comments
 
+def vhdl_remove_protected_code(vhdl_code:str) -> str:
+    """Removes protected code from VHDL code.
+
+    Args:
+        vhdl_code (str): Single string of VHDL code from file read.
+
+    Returns:
+        str: Single string of VHDL code without any protected code
+    """
+    code = vhdl_code.strip()
+    lines = code.splitlines()
+    dict_lines = dict.fromkeys(lines)
+    protected_end = "`protect end_protected"
+    if protected_end in dict_lines:
+        end_of_protected_idx = list(dict_lines.keys()).index(protected_end) + 1
+        if end_of_protected_idx >= len(lines):
+            return ""
+        else:
+            return "\n".join(lines[end_of_protected_idx:])
+    else:
+        return vhdl_code
 
 # VHDL file parsing {{{
 vhdl_regex_patterns = {
@@ -471,6 +492,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT) -> FileO
     vhdl = read_text_file_contents(loc)
 
     vhdl = vhdl_remove_comments(vhdl)
+    vhdl = vhdl_remove_protected_code(vhdl)
     f_obj = FileObjVhdl(loc, lib=lib)
 
     matches = {}
