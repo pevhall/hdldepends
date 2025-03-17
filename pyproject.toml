@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hdldepends"
-version = "0.0.2"
+version = "0.0.3"
 authors = [
   { name="Pev Hall", email="pev.hall@gmail.com" },
 ]
@@ -16,7 +16,6 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 dependencies = [
-  "chardet", 
   "tomli; python_version<'3.10'"
 ]
 
