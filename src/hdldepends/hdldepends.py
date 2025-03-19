@@ -253,7 +253,8 @@ class FileObj:
         self, look: Lookup, files_passed=[], components_missed=[], level=0
     ) -> List['FileObj']:
         files_passed.append(self)
-        if self.loc in look.files_2_skip_from_order:
+        if look.check_if_skip_from_order(self.loc):
+        # if self.loc in look.files_2_skip_from_order:
             return []
         order: List[FileObj] = []
         for f_obj in self.get_file_deps(look):
@@ -488,15 +489,15 @@ def vhdl_remove_protected_code(vhdl_code:str) -> str:
 
 vhdl_regex_patterns = {
     "package_decl": re.compile(
-        r"\s*package\s+(\w+)\s+is.*?end\s+(?:package|\1)",
+        r"(?<!:)\s*package\s+(\w+)\s+is.*?end(?:\s+(?:package|\1||\s*;))",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
-        r"\s*entity\s+(\w+)\s+is.*?end\s+(?:entity|\1)",
+        r"(?<!:)\s*entity\s+(\w+)\s+is.*?end\s+(?:entity|\1)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "vhdl_component_decl": re.compile(
-        r"\s*component\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)",
+        r"(?<!:)\s*component\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_inst": re.compile(
@@ -515,7 +516,7 @@ vhdl_regex_patterns = {
 def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT) -> FileObjVhdl:
     """ Function to find matches in the VHDL code """
 
-    log.info(f"passing VHDL file {loc}:")
+    log.info(f"passing VHDL file {lib:} {loc}:")
     vhdl = read_text_file_contents(loc)
 
     vhdl = vhdl_remove_comments(vhdl)
@@ -702,14 +703,14 @@ class LookupSingular(Lookup): # {{{
         self.entity_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.loc_2_file_obj: dict[Path, FileObjLookup] = {}
         self.verilog_file_name_2_file_obj : dict[str : FileObjVerilog] = {}
-        self.ignore_set_libs: Set[str] = set()
-        self.ignore_set_packages: Set[Name] = set()
-        self.ignore_set_entities: Set[Name] = set()
+        self.ignore_set_libs: set[str] = set()
+        self.ignore_set_packages: set[Name] = set()
+        self.ignore_set_entities: set[Name] = set()
         self.toml_loc: Optional[Path] = None
         self.toml_modification_time = None
         self.top_lib : Optional[str] = None
-        self.ignore_components : Set[str] = set()
-        self.files_2_skip_from_order : Set[Path] = set()
+        self.ignore_components : set[str] = set()
+        self.files_2_skip_from_order : set[Path] = set()
         self.vhdl_file_list = None
         self.verilog_file_list = None
         self.other_file_list = None
@@ -902,6 +903,7 @@ class LookupSingular(Lookup): # {{{
             config, "package_file_skip_order", add_file_to_list_skip_order, top_lib=top_lib
         )
 
+        print(f'asdfasdf {self.files_2_skip_from_order}')
         self.register_vhdl_file_list(vhdl_file_list)
         self.register_verilog_file_list(verilog_file_list)
         self.register_other_file_list(other_file_list)
@@ -1043,6 +1045,10 @@ class LookupSingular(Lookup): # {{{
 
         return [loc for _, loc in other_File_list_w_lib]
 
+
+    def check_if_skip_from_order(self, loc:Path):
+        return loc in self.files_2_skip_from_order
+
     def register_other_file_list(self, other_file_list):
         self.other_file_list = other_file_list
         for loc in other_file_list:
@@ -1055,7 +1061,6 @@ class LookupSingular(Lookup): # {{{
 
     def register_vhdl_file_list(self, vhdl_file_list : List[Tuple[str, Path]]):
         self.vhdl_file_list = vhdl_file_list
-        print(f'NEW: {self.vhdl_file_list=}')
         for lib, loc in vhdl_file_list:
             parse_vhdl_file(self, loc, lib=lib)
 
@@ -1184,7 +1189,8 @@ class LookupMulti(LookupSingular):  # {{{
         for lib, loc in vhdl_file_list:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is not None:
-                assert f_obj.lib == lib
+                if f_obj.lib != lib:
+                    raise RuntimeError(f'Double library error {f_obj.lib} != {lib}. Check if file has been added twice with different libraries')
                 f_obj.register_with_lookup(self)
             else:
                 # not passed in common lookup pass in prj lookup
@@ -1223,6 +1229,14 @@ class LookupMulti(LookupSingular):  # {{{
             if l_common.has_loc(loc):
                 return l_common.get_loc(loc)
         return None
+
+    def check_if_skip_from_order(self, loc:Path):
+        if LookupSingular.check_if_skip_from_order(self,loc):
+            return True
+        for l_common in self.look_subs:
+            if l_common.check_if_skip_from_order(loc):
+                return True
+        return False
 
     def get_top_lib(self) -> Optional[str]:
         if super().get_top_lib() is not None:

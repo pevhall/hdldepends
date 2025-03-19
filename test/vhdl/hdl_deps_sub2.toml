@@ -3,5 +3,5 @@ pre_cmds = 'bash test.sh'
 ignore_libs = [ 'ieee', 'std' ]
 #file_list_files = './fw_files2.txt'
 
-vhdl_files_glob = ['./*.vhd','!*3*']
+vhdl_files_glob = ['./*.vhd','!*3*' ,'!*VCOMP*']
 

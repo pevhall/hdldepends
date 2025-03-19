@@ -2,5 +2,5 @@
 ignore_libs = 'xpm'
 sub ='hdl_deps_sub2.toml'
 vhdl_files_file = './fw_files1.txt'
-
+package_file_skip_order = {unisim = './unisim_VCOMP.vhd'}
 

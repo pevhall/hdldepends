@@ -4,8 +4,10 @@ use ieee.numeric_std.all;
 
 use std.textio.all;
 
+library unisim;
+use unisim.vcomponents.all;
+
 use work.del_pkg.all;
-use std.textio.all;
 
 entity del is
   generic (
