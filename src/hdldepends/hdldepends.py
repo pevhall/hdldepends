@@ -5,12 +5,12 @@ import sys
 import glob
 import json
 import pickle
-import hashlib
+import string
 import fnmatch
-try: import tomllib
-except ModuleNotFoundError: import tomli as tomllib
 import argparse
 import subprocess
+try: import tomllib
+except ModuleNotFoundError: import tomli as tomllib
 from pathlib import Path
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -43,7 +43,11 @@ class log:
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
-    loc = Path(str(loc).format(**os.environ))
+    loc_str = str(loc).format(**os.environ)
+    if re.search(r"\{[^}]+\}", loc_str):
+        log.error('Note: program does not currently support curly brackets, {}, in path it expects these to make environment variables')
+        raise RuntimeError(f"Path {loc_str} still contains env variables which we cannot find in shell's env")
+    loc = Path(loc_str)
     # dir = Path(os.path.expandvars(str(dir)))
     if not loc.is_absolute():
         loc = dir / loc
@@ -109,7 +113,7 @@ def read_text_file_contents(loc : Path):
 
 # }}}
 
-def process_glob_patterns(patterns: List[str], base_path: str = ".") -> List[Path]: # {{{
+def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> List[Path]: # {{{
     """
     Process a list of glob patterns sequentially, including exclusion patterns (starting with '!'),
     to generate a filtered list of file paths. Each pattern modifies the current file list.
@@ -489,19 +493,19 @@ def vhdl_remove_protected_code(vhdl_code:str) -> str:
 
 vhdl_regex_patterns = {
     "package_decl": re.compile(
-        r"(?<!:)\s*package\s+(\w+)\s+is.*?end(?:\s+(?:package|\1||\s*;))",
+        r"(?<!:)\Wpackage\s+(\w+)\s+is.*?end(?:\s+(?:package|\1)|)\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
-        r"(?<!:)\s*entity\s+(\w+)\s+is.*?end\s+(?:entity|\1)",
+        r"(?<!:)\Wentity\s+(\w+)\s+is.*?end\s+(?:entity|\1)\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "vhdl_component_decl": re.compile(
-        r"(?<!:)\s*component\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)",
+        r"(?<!:)\Wcomponent\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_inst": re.compile(
-        r"\s*(\w+)\s*:\s*(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
+        r"\s*(\w+)\@:\s*(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "direct_inst": re.compile(
@@ -509,7 +513,7 @@ vhdl_regex_patterns = {
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "package_use": re.compile(
-        r"^(?!\s*--)\s*use\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
+        r"\Wuse\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
     ),
 }
 

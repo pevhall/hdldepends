@@ -201,9 +201,14 @@ The compile order command line option accepts a location to a file not yet creat
 The compile order library option exports the compile order for one particular library. The option accepts *lib:file* where lib is the library to export and file is the location to export the compile order. Each line of the created file will contain the absolute path to a file.
  
 ## Positional Arguments
-This program has only one positional argument.
+This program has only one positional argument type.
 
 ### `config_file`
-This can be a direct path to the project configuration file or just the file name. If only the file name is specified the program will look in parent directories for the file.
+This can be a direct path to a configuration file or just the file name. If only the file name is specified the program will look in parent directories for the file.
 
 More then one configuration file can be specified. If more then one file is specified use the `--top-lib` command line option and not `top_file` configuration file key.
+
+## Paths
+File paths can be relative to the file that contains the paths or relative to the current directory if passed by the command line.
+
+Paths can also contain shell environment variables by placing the environment variable within {} (curly brackets)
