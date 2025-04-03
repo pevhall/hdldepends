@@ -160,7 +160,6 @@ def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> L
     return sorted(current_files)
 # }}}
 
-LIB_DEFAULT = 'work'
 class Name: # {{{
     lib: str
     name: Optional[str]
@@ -200,9 +199,8 @@ class Lookup: #{{{
 #}}}
 
 # Constructs to handle files {{{
-# class FileType(Enum):
-#     VHDL = auto()
-#     VERILOG = auto()
+
+LIB_DEFAULT = 'work'
 
 class FileObjType(Enum):
     VHDL = auto()
@@ -493,15 +491,15 @@ def vhdl_remove_protected_code(vhdl_code:str) -> str:
 
 vhdl_regex_patterns = {
     "package_decl": re.compile(
-        r"(?<!:)\Wpackage\s+(\w+)\s+is.*?end(?:\s+(?:package|\1)|)\s*;",
+        r"(?<!:)\Wpackage\s+(\w+)\s+is.*?end(?:\s+(?:package|\1)|)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
-        r"(?<!:)\Wentity\s+(\w+)\s+is.*?end\s+(?:entity|\1)\s*;",
+        r"(?<!:)\Wentity\s+(\w+)\s+is.*?end\s+(?:entity|\1)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "vhdl_component_decl": re.compile(
-        r"(?<!:)\Wcomponent\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)\s*;",
+        r"(?<!:)\Wcomponent\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_inst": re.compile(

@@ -24,7 +24,7 @@ entity del2 is
     tedast_i : out  std_logic
 
   );
-end entity;
+end entity del;
 
 architecture sim of del2 is
   constant PATH : string := "";
@@ -44,7 +44,7 @@ architecture sim of del2 is
       tedast_i : out  std_logic
 
     );
-  end component;
+  end component delComp;
 
   signal test_w_ovr : unsigned(3 downto 0);
   alias test_ovr is test_w_ovr(3);
