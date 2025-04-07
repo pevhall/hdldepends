@@ -211,6 +211,7 @@ class FileObjType(Enum):
     VHDL = auto()
     VERILOG = auto()
     OTHER = auto()
+    X_BD = auto()
 
 class FileObj:
     def __init__(self, loc: Path):
@@ -243,6 +244,7 @@ class FileObj:
     def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
         for e in self.entities:
             look.add_entity(e, self)
+            print(f'added {e} to {look.entity_name_2_file_obj.keys()}')
         if not skip_loc:
             look.add_loc(self.loc, self)
 
@@ -303,6 +305,14 @@ class FileObjOther(FileObj):
     def file_type_str(self):
         return "Other"
 
+class FileObjXBd(FileObj):
+    def __init__(self, loc: Path):
+        super().__init__(loc)
+        self.f_type : Optional[FileObjType] = FileObjType.X_BD
+
+    @property
+    def file_type_str(self):
+        return "X_BD"
 
 class FileObjVerilog(FileObj):
 
@@ -683,6 +693,39 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path) -> FileObjVerilog:
     return f_obj
 #}}}
 
+#Pharse X_BD: Xilinx Block Digarm File {{{
+def parse_x_bd_file(look : Optional[Lookup], loc : Path) -> FileObjXBd:
+    log.info(f"parsing Xilinx BD file {loc}:")
+    with open(loc, "rb") as toml_f:
+        bd_dict = json.load(toml_f)
+    design_dict = bd_dict["design"]
+    module_name = design_dict["design_info"]["name"]
+    log.debug(f"Xilinx BD {loc} decares {module_name}")
+    f_obj = FileObjXBd(loc)
+    name = Name(LIB_DEFAULT, module_name)
+    f_obj.entities.append(name)
+    if 'components' in design_dict:
+        for component_name, component in design_dict["components"].items():
+            if not 'reference_info' in component:
+                continue
+            reference_info = component['reference_info']
+            if not 'ref_type' in reference_info:
+                continue
+            ref_type = reference_info['ref_type']
+            if ref_type != 'hdl':
+                continue
+            ref_name = reference_info['ref_name']
+            log.debug(f'Xilinx BD {loc} requires {ref_name}')
+            name = Name(LIB_DEFAULT, ref_name)
+            f_obj.entity_deps.append(name)
+    if look is not None:
+        f_obj.register_with_lookup(look)
+    return f_obj
+
+
+
+#}}}
+
 class LookupSingular(Lookup): # {{{
     TOML_KEYS = [
         "pre_cmds",
@@ -700,6 +743,9 @@ class LookupSingular(Lookup): # {{{
         "other_files",
         "other_files_file",
         "other_files_glob",
+        "x_bd_files",
+        "x_bd_files_file",
+        "x_bd_files_glob",
     ]
     VERSION = 3
 
@@ -722,6 +768,7 @@ class LookupSingular(Lookup): # {{{
         self.vhdl_file_list = None
         self.verilog_file_list = None
         self.other_file_list = None
+        self.x_bd_file_list = None
 
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
@@ -751,7 +798,7 @@ class LookupSingular(Lookup): # {{{
         assert toml_loc.is_file()
         if not pickle_loc.is_file():
             log.debug('will not load from pickle no file at {pickle_loc}')
-            return None, None, None, None
+            return None, None, None, None, None
         log.info(f"atempting to load cache from {pickle_loc}")
         pickle_mod_time = get_file_modification_time(pickle_loc)
 
@@ -760,16 +807,16 @@ class LookupSingular(Lookup): # {{{
 
         if LookupSingular.VERSION != inst.version:
             log.info(f'hdldepends version { LookupSingular.VERSION} but pickle top_lib {inst.version} will not load from pickle')
-            return None, None, None, None
+            return None, None, None, None, None
 
         toml_modification_time = get_file_modification_time(toml_loc)
         if toml_modification_time != inst.toml_modification_time:
             log.info(f"will not load from pickle as {toml_loc} out of date")
-            return None, None, None, None
+            return None, None, None, None, None
 
         if top_lib != inst.top_lib:
             log.info(f'requested top_lib {top_lib} but pickle top_lib {inst.top_lib} will not load from pickle')
-            return None, None, None, None
+            return None, None, None, None, None
 
         config = load_config(toml_loc)
 
@@ -778,14 +825,14 @@ class LookupSingular(Lookup): # {{{
         )
         if vhdl_file_list != inst.vhdl_file_list:
             log.info(f'Will not load from pickle as vhdl_file_list has changed')
-            return None, vhdl_file_list, None, None
+            return None, vhdl_file_list, None, None, None
 
         verilog_file_list = LookupSingular.get_verilog_file_list_from_config_dict(
             config, toml_loc.parent, top_lib
         )
         if verilog_file_list != inst.verilog_file_list:
             log.info(f'Will not load from pickle as verilog_file_list has changed')
-            return None, vhdl_file_list, verilog_file_list, None
+            return None, vhdl_file_list, verilog_file_list, None, None
 
         other_file_list = LookupSingular.get_other_file_list_from_config_dict(
             config, toml_loc.parent, top_lib=top_lib
@@ -793,14 +840,22 @@ class LookupSingular(Lookup): # {{{
 
         if other_file_list != inst.other_file_list:
             log.info(f'Will not load from pickle as other_file_list has changed')
-            return None, vhdl_file_list, verilog_file_list, other_file_list
+            return None, vhdl_file_list, verilog_file_list, other_file_list, None
+
+        x_bd_file_list = LookupSingular.get_x_bd_file_list_from_config_dict(
+            config, toml_loc.parent, top_lib=top_lib
+        )
+
+        if x_bd_file_list != inst.x_bd_file_list:
+            log.info(f'Will not load from pickle as x_bd_file_list has changed')
+            return None, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list
         
         log.info(f"loaded from {pickle_loc}, updating required files")
         any_changes = inst.check_for_src_files_updates()
         if any_changes:
-            log.info(f"Updating pickle wtih the changes detected on disk")
+            log.info(f"Updating pickle with the changes detected on disk")
             inst.save_to_pickle(pickle_loc)
-        return inst, vhdl_file_list, verilog_file_list, other_file_list
+        return inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list
 
     def save_to_pickle(self, pickle_loc: Path):
         log.info(f"Caching to {pickle_loc}")
@@ -872,7 +927,7 @@ class LookupSingular(Lookup): # {{{
         log.info(f"{key} = {l}")
         return set(l)
 
-    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str], vhdl_file_list=None, verilog_file_list=None, other_file_list=None):
+    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str], vhdl_file_list=None, verilog_file_list=None, other_file_list=None, x_bd_file_list=None):
 
         if 'top_lib' in config:
             self.top_lib = config['top_lib']
@@ -903,6 +958,11 @@ class LookupSingular(Lookup): # {{{
                 config, work_dir, top_lib=top_lib
             )
 
+        if x_bd_file_list is None:
+            x_bd_file_list = LookupSingular.get_x_bd_file_list_from_config_dict(
+                config, work_dir, top_lib=top_lib
+            )
+
         def add_file_to_list_skip_order(lib, loc_str):
             loc = path_abs_from_dir(work_dir, Path(loc_str))
             self.files_2_skip_from_order.add(loc)
@@ -911,10 +971,10 @@ class LookupSingular(Lookup): # {{{
             config, "package_file_skip_order", add_file_to_list_skip_order, top_lib=top_lib
         )
 
-        print(f'asdfasdf {self.files_2_skip_from_order}')
         self.register_vhdl_file_list(vhdl_file_list)
         self.register_verilog_file_list(verilog_file_list)
         self.register_other_file_list(other_file_list)
+        self.register_x_bd_file_list(x_bd_file_list)
 
     @staticmethod
     def get_common_file_list_from_config_dict(common_tag : str, config: dict, work_dir: Path, top_lib : Optional[str]):
@@ -992,6 +1052,10 @@ class LookupSingular(Lookup): # {{{
     def get_other_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
         return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('other', config, work_dir, top_lib)
 
+    @staticmethod
+    def get_x_bd_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
+        return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('x_bd', config, work_dir, top_lib)
+
     def check_if_skip_from_order(self, loc:Path):
         return loc in self.files_2_skip_from_order
 
@@ -1004,6 +1068,18 @@ class LookupSingular(Lookup): # {{{
             f_obj.entities.append(entity_name)
             self.entity_name_2_file_obj[entity_name] = f_obj
             self.loc_2_file_obj[loc] = f_obj
+
+    def register_x_bd_file_list(self, x_bd_file_list):
+        self.x_bd_file_list = x_bd_file_list
+        for loc in x_bd_file_list:
+            
+            f_obj = FileObjXBd(loc=loc)
+            # entity_name = Name(LIB_DEFAULT, loc.stem)
+            #NOTE could add check 
+            parse_x_bd_file(self, loc);
+            # f_obj.entities.append(entity_name)
+            # self.entity_name_2_file_obj[entity_name] = f_obj
+            # self.loc_2_file_obj[loc] = f_obj
 
     def register_vhdl_file_list(self, vhdl_file_list : List[Tuple[str, Path]]):
         self.vhdl_file_list = vhdl_file_list
@@ -1439,8 +1515,9 @@ def create_lookup_from_toml(
     vhdl_file_list = None
     verilog_file_list = None
     other_file_list = None
+    x_bd_file_list = None
     if attemp_read_pickle:
-        inst, vhdl_file_list, verilog_file_list, other_file_list = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
+        inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list= LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
         if inst is not None:
             inst.look_subs = look_subs
             return inst
@@ -1455,19 +1532,19 @@ def create_lookup_from_toml(
 
         log.info(f"create LookupPrj from {toml_loc}")
         inst = LookupPrj.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list
+            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list=x_bd_file_list
         )
 
     elif contains_any(config.keys(), LookupMulti.TOML_KEYS):
 
         log.info(f"create LookupMulti from {toml_loc}")
         inst = LookupMulti.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list
+            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list = x_bd_file_list
         )
 
     else :
         inst = LookupSingular.create_from_config_dict(
-            config, work_dir=work_dir, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list=verilog_file_list, other_file_list = other_file_list
+            config, work_dir=work_dir, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list=verilog_file_list, other_file_list = other_file_list, x_bd_file_list = x_bd_file_list
         )
 
     print(f'toml_loc {toml_loc}')

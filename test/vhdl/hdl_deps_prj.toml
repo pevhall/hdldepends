@@ -6,5 +6,6 @@ top_vhdl_file = './del.vhd'
 top_entity = 'del'
 vhdl_files = './del3.vhd'
 verilog_files = './counter.v'
+x_bd_files_glob = './*.bd'
 
 package_file_skip_order = { xpm ='{VIV_LIB}/xpm_VCOMP.vhd'}

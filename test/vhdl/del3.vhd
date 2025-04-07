@@ -62,5 +62,10 @@ begin
     rst_i     => '0'
   );
 
+  i_design_1_bd : entity work.design_1
+  port map (
+    clk_i => clk_i
+  );
+
 end architecture;
 
