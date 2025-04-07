@@ -22,20 +22,25 @@ from typing import Optional, Union, List, Tuple, Set
 log_level = 0
 
 class log:
+    @staticmethod
     def _log(severity, *args, **kwargs):
         print(f'[{severity}]', *args, **kwargs, file=sys.stderr)
 
+    @staticmethod
     def error(*args, **kwargs):
         log._log('ERROR', *args, **kwargs)
 
+    @staticmethod
     def warning(*args, **kwargs):
         if log_level >= 0:
             log._log('WARNING', *args, **kwargs)
 
+    @staticmethod
     def info(*args, **kwargs):
         if log_level >= 1:
             log._log('INFO', *args, **kwargs)
 
+    @staticmethod
     def debug(*args, **kwargs):
         if log_level >= 2:
             log._log('DEBUG', *args, **kwargs)
@@ -692,8 +697,9 @@ class LookupSingular(Lookup): # {{{
         "verilog_files",
         "verilog_files_file",
         "verilog_files_glob",
+        "other_files",
         "other_files_file",
-        "other_files_glob"
+        "other_files_glob",
     ]
     VERSION = 3
 
@@ -911,15 +917,61 @@ class LookupSingular(Lookup): # {{{
         self.register_other_file_list(other_file_list)
 
     @staticmethod
-    def get_vhdl_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
-        log.debug(f'called get_vhdl_file_list_from_config_dict( top_lib={top_lib} )')
-        vhdl_file_list = []
+    def get_common_file_list_from_config_dict(common_tag : str, config: dict, work_dir: Path, top_lib : Optional[str]):
+        common_file_list = []
 
         def add_file_to_list(lib, loc_str):
             loc = path_abs_from_dir(work_dir, Path(loc_str))
-            vhdl_file_list.append((lib, loc))
+            common_file_list.append((lib, loc))
 
-        LookupSingular._process_config_opt_lib(config, "vhdl_files", add_file_to_list, top_lib=top_lib)
+        LookupSingular._process_config_opt_lib(config, common_tag+"_files", add_file_to_list, top_lib=top_lib)
+
+        def add_file_list_to_list(lib, f_str):
+            fl_loc = Path(f_str)
+            fl_loc = path_abs_from_dir(work_dir, fl_loc)
+            with open(fl_loc, "r") as f_list_file:
+                for loc_str in f_list_file:
+                    loc_str = loc_str.strip()
+                    loc = path_abs_from_dir(fl_loc.parents[0], Path(loc_str))
+                    common_file_list.append((lib, loc))
+
+        LookupSingular._process_config_opt_lib(
+            config, common_tag+"_files_file", add_file_list_to_list, top_lib=top_lib
+        )
+
+        glob_str_dict = {}
+        def add_to_glob_str_dict(lib, glob_str):
+            if lib not in glob_str_dict:
+                glob_str_dict[lib] = []
+            glob_str_dict[lib].append(glob_str)
+
+        LookupSingular._process_config_opt_lib(
+            config, common_tag+"_files_glob", add_to_glob_str_dict, top_lib=top_lib
+        )
+
+        for lib, glob_str_list in glob_str_dict.items():
+            loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
+            for loc_rel in loc_rel_list:
+                loc = path_abs_from_dir(work_dir, loc_rel)
+                common_file_list.append((lib, loc))
+
+        return common_file_list
+
+    @staticmethod
+    def get_common_file_list_from_config_dict_force_default_lib(common_tag : str, config: dict, work_dir: Path, top_lib : Optional[str]):
+
+        common_file_list = LookupSingular.get_common_file_list_from_config_dict(common_tag, config, work_dir, top_lib)
+
+        for lib, loc in common_file_list:
+            if lib != LIB_DEFAULT:
+                log.error(f'Files types not VHDL must have default library {LIB_DEFAULT} got library {lib} on file {loc}')
+
+        return [loc for _, loc in common_file_list]
+    
+    @staticmethod
+    def get_vhdl_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
+        log.debug(f'called get_vhdl_file_list_from_config_dict( top_lib={top_lib} )')
+        vhdl_file_list = LookupSingular.get_common_file_list_from_config_dict('vhdl', config, work_dir, top_lib)
 
         def add_file_to_list_skip_order(lib, loc_str):
             loc = path_abs_from_dir(work_dir, Path(loc_str))
@@ -929,124 +981,16 @@ class LookupSingular(Lookup): # {{{
             config, "package_file_skip_order", add_file_to_list_skip_order, top_lib=top_lib
         )
         
-
-        def add_file_list_to_list(lib, f_str):
-            fl_loc = Path(f_str)
-            fl_loc = path_abs_from_dir(work_dir, fl_loc)
-            with open(fl_loc, "r") as f_list_file:
-                for loc_str in f_list_file:
-                    loc_str = loc_str.strip()
-                    loc = path_abs_from_dir(fl_loc.parents[0], Path(loc_str))
-                    vhdl_file_list.append((lib, loc))
-
-        LookupSingular._process_config_opt_lib(
-            config, "vhdl_files_file", add_file_list_to_list, top_lib=top_lib
-        )
-
-        glob_str_dict = {}
-        def add_to_glob_str_dict(lib, glob_str):
-            if lib not in glob_str_dict:
-                glob_str_dict[lib] = []
-            glob_str_dict[lib].append(glob_str)
-
-        LookupSingular._process_config_opt_lib(
-            config, "vhdl_files_glob", add_to_glob_str_dict, top_lib=top_lib
-        )
-
-        for lib, glob_str_list in glob_str_dict.items():
-            loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
-            for loc_rel in loc_rel_list:
-                loc = path_abs_from_dir(work_dir, loc_rel)
-                vhdl_file_list.append((lib, loc))
-        
         return vhdl_file_list
 
     @staticmethod
     def get_verilog_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
         log.debug(f'called get_verilog_file_list_from_config_dict( top_lib={top_lib} )')
-        verilog_file_list_w_lib = []
-
-        def add_file_to_list(lib, loc_str):
-            loc = path_abs_from_dir(work_dir, Path(loc_str))
-            verilog_file_list_w_lib.append((lib, loc))
-
-        LookupSingular._process_config_opt_lib(config, "verilog_files", add_file_to_list, top_lib=top_lib)
-
-        def add_file_list_to_list(lib, f_str):
-            fl_loc = Path(f_str)
-            fl_loc = path_abs_from_dir(work_dir, fl_loc)
-            with open(fl_loc, "r") as f_list_file:
-                for loc_str in f_list_file:
-                    loc_str = loc_str.strip()
-                    loc = path_abs_from_dir(fl_loc.parents[0], Path(loc_str))
-                    verilog_file_list_w_lib.append((lib, loc))
-
-        LookupSingular._process_config_opt_lib(
-            config, "verilog_files_file", add_file_list_to_list, top_lib=top_lib
-        )
-
-        glob_str_dict = {}
-        def add_to_glob_str_dict(lib, glob_str):
-            if lib not in glob_str_dict:
-                glob_str_dict[lib] = []
-            glob_str_dict[lib].append(glob_str)
-
-        LookupSingular._process_config_opt_lib(
-            config, "verilog_files_glob", add_to_glob_str_dict, top_lib=top_lib
-        )
-
-        for lib, glob_str_list in glob_str_dict.items():
-            loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
-            for loc_rel in loc_rel_list:
-                loc = path_abs_from_dir(work_dir, loc_rel)
-                verilog_file_list_w_lib.append((lib, loc))
-        
-        for lib, loc in verilog_file_list_w_lib:
-            if lib != LIB_DEFAULT:
-                log.error(f"Verilog does not support libraries got lib {lib} on file {loc}")
-        verilog_file_list = [a[1] for a in verilog_file_list_w_lib]
-
-        log.debug(f'get_verilog_file_list_from_config_dict returns {verilog_file_list=}')
-        return verilog_file_list
+        return LookupSingular.get_common_file_list_from_config_dict_force_default_lib('verilog', config, work_dir, top_lib)
 
     @staticmethod
     def get_other_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
-        other_File_list_w_lib = []
-        def add_ext_dep_file_to_list(lib, f_str):
-            fl_loc = Path(f_str)
-            fl_loc = path_abs_from_dir(work_dir, fl_loc)
-            with open(fl_loc, "r") as f_list_file:
-                for loc_str in f_list_file:
-                    loc_str = loc_str.strip()
-                    loc = path_abs_from_dir(fl_loc.parents[0], Path(loc_str))
-                    other_File_list_w_lib.append((lib, loc))
-                    
-        LookupSingular._process_config_opt_lib(
-            config, "other_files_file", add_ext_dep_file_to_list, top_lib=top_lib
-        )
-        
-        glob_str_dict = {}
-        def add_to_glob_str_dict(lib, glob_str):
-            if lib not in glob_str_dict:
-                glob_str_dict[lib] = []
-            glob_str_dict[lib].append(glob_str)
-
-        LookupSingular._process_config_opt_lib(
-            config, "other_files_glob", add_to_glob_str_dict, top_lib=top_lib
-        )
-
-        for lib, glob_str_list in glob_str_dict.items():
-            loc_rel_list = process_glob_patterns(glob_str_list, work_dir)
-            for loc_rel in loc_rel_list:
-                loc = path_abs_from_dir(work_dir, loc_rel)
-                other_File_list_w_lib.append((lib, loc))
-
-        for lib, loc in other_File_list_w_lib:
-            if lib != LIB_DEFAULT:
-                log.error(f'Files types not VHDL must have default library {LIB_DEFAULT} got library {lib} on file {loc}')
-
-        return [loc for _, loc in other_File_list_w_lib]
-
+        return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('other', config, work_dir, top_lib)
 
     def check_if_skip_from_order(self, loc:Path):
         return loc in self.files_2_skip_from_order
