@@ -706,18 +706,33 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path) -> FileObjXBd:
     f_obj.entities.append(name)
     if 'components' in design_dict:
         for component_name, component in design_dict["components"].items():
-            if not 'reference_info' in component:
+            if 'reference_info' in component:
+                reference_info = component['reference_info']
+                if not 'ref_type' in reference_info:
+                    continue
+                ref_type = reference_info['ref_type']
+                if ref_type != 'hdl':
+                    continue
+                ref_name = reference_info['ref_name']
+                log.debug(f'Xilinx BD {loc} requires {ref_name}')
+                name = Name(LIB_DEFAULT, ref_name)
+                log.info(f'X_BD {loc} requires HDL instance {component_name} is {ref_name}')
+                f_obj.entity_deps.append(name)
                 continue
-            reference_info = component['reference_info']
-            if not 'ref_type' in reference_info:
-                continue
-            ref_type = reference_info['ref_type']
-            if ref_type != 'hdl':
-                continue
-            ref_name = reference_info['ref_name']
-            log.debug(f'Xilinx BD {loc} requires {ref_name}')
-            name = Name(LIB_DEFAULT, ref_name)
-            f_obj.entity_deps.append(name)
+            if 'parameters' in component:
+                parameters = component['parameters']
+                if not 'ACTIVE_SYNTH_BD' in parameters:
+                    continue
+                active_synth_bd = parameters['ACTIVE_SYNTH_BD']
+                file_name = active_synth_bd['value']
+                s = file_name.split('.')
+                assert len(s) == 2
+                assert s[1] == 'bd'
+                ref_name = s[0]
+                name = Name(LIB_DEFAULT, ref_name)
+                log.info(f'X_BD {loc} requsted BD instance {component_name} is {ref_name}')
+                f_obj.entity_deps.append(name)
+                
     if look is not None:
         f_obj.register_with_lookup(look)
     return f_obj
