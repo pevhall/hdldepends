@@ -213,6 +213,13 @@ class FileObjType(Enum):
     OTHER = auto()
     X_BD = auto()
 
+
+def string_to_FileObjType(s: str) -> FileObjType:
+    try:
+        return FileObjType[s.upper()]
+    except KeyError:
+        raise ValueError(f"Unknown file type: {s}")
+
 class FileObj:
     def __init__(self, loc: Path):
         self.loc = resolve_abs_path(loc)
@@ -233,7 +240,7 @@ class FileObj:
         self.__dict__.update(f_obj.__dict__) #this didn't work
 
     @property
-    def file_type_str(self):
+    def file_type_str(self) -> str:
         return "Unknown"
 
     @staticmethod
@@ -244,7 +251,6 @@ class FileObj:
     def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
         for e in self.entities:
             look.add_entity(e, self)
-            print(f'added {e} to {look.entity_name_2_file_obj.keys()}')
         if not skip_loc:
             look.add_loc(self.loc, self)
 
@@ -302,7 +308,7 @@ class FileObjOther(FileObj):
         self.f_type : Optional[FileObjType] = FileObjType.OTHER
 
     @property
-    def file_type_str(self):
+    def file_type_str(self) -> str:
         return "Other"
 
 class FileObjXBd(FileObj):
@@ -311,7 +317,7 @@ class FileObjXBd(FileObj):
         self.f_type : Optional[FileObjType] = FileObjType.X_BD
 
     @property
-    def file_type_str(self):
+    def file_type_str(self) -> str:
         return "X_BD"
 
 class FileObjVerilog(FileObj):
@@ -327,7 +333,7 @@ class FileObjVerilog(FileObj):
         self.f_type : Optional[FileObjType] = FileObjType.VERILOG
 
     @property
-    def file_type_str(self):
+    def file_type_str(self) -> str:
         return "Verilog"
 
     def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
@@ -748,7 +754,7 @@ class LookupSingular(Lookup): # {{{
         "ignore_packages",
         "ignore_entities",
         "ignore_components",
-        "package_file_skip_order",
+        "vhdl_package_skip_order",
         "vhdl_files",
         "vhdl_files_file",
         "vhdl_files_glob",
@@ -762,7 +768,7 @@ class LookupSingular(Lookup): # {{{
         "x_bd_files_file",
         "x_bd_files_glob",
     ]
-    VERSION = 3
+    VERSION = 4
 
     def __init__(self, allow_duplicates: bool = True):
         log.debug('LookupSingular::__init__')
@@ -877,6 +883,9 @@ class LookupSingular(Lookup): # {{{
         with open(pickle_loc, "wb") as pickle_f:
             pickle.dump(self, pickle_f, protocol=pickle.HIGHEST_PROTOCOL)
 
+    def has_top_file(self):
+        return False
+
     def check_for_src_files_updates(self) -> bool:
         """Returns True if there where any changes"""
         compile_order_out_of_date = False
@@ -983,7 +992,7 @@ class LookupSingular(Lookup): # {{{
             self.files_2_skip_from_order.add(loc)
 
         LookupSingular._process_config_opt_lib(
-            config, "package_file_skip_order", add_file_to_list_skip_order, top_lib=top_lib
+            config, "vhdl_package_skip_order", add_file_to_list_skip_order, top_lib=top_lib
         )
 
         self.register_vhdl_file_list(vhdl_file_list)
@@ -1053,7 +1062,7 @@ class LookupSingular(Lookup): # {{{
             vhdl_file_list.append((lib, loc))
 
         LookupSingular._process_config_opt_lib(
-            config, "package_file_skip_order", add_file_to_list_skip_order, top_lib=top_lib
+            config, "vhdl_package_skip_order", add_file_to_list_skip_order, top_lib=top_lib
         )
         
         return vhdl_file_list
@@ -1245,20 +1254,25 @@ class LookupMulti(LookupSingular):  # {{{
 
 
 
-    def get_loc(self, loc: Path, lib_to_add_to_if_not_found: Optional[str] = None):
+    def get_loc(self, loc: Path, type_to_add_to_if_not_found : Optional[FileObjType]=None, lib_to_add_to_if_not_found: str = LIB_DEFAULT):
+    # def get_loc(self, loc: Path, lib_to_add_to_if_not_found: Optional[str] = None):
         try:
             return super().get_loc(loc)
         except KeyError:
             f_obj = self._get_loc_from_common(loc)
-            if f_obj is not None:
-                return f_obj
-            if lib_to_add_to_if_not_found is not None:
-                f_obj = parse_vhdl_file(
-                    self, loc, lib=lib_to_add_to_if_not_found
-                )
-                return f_obj
-            else:
-                raise KeyError(f"file {loc} not found in dependency lookups")
+            if f_obj is None:
+                if type_to_add_to_if_not_found is not None:
+                    if type_to_add_to_if_not_found is FileObjType.VHDL:
+                        f_obj = parse_vhdl_file( self, loc, lib=lib_to_add_to_if_not_found)
+                    elif type_to_add_to_if_not_found is FileObjType.VERILOG:
+                        f_obj = parse_verilog_file(self, loc)
+                    elif type_to_add_to_if_not_found is FileObjType.X_BD:
+                        f_obj = parse_x_bd_file(self, loc)
+                    else:
+                        raise TypeError(f'Unexpected top level file type:{type_to_add_to_if_not_found}')
+                else:
+                    raise KeyError(f"file {loc} not found in dependency lookups")
+            return f_obj
 
 
     def _get_loc_from_common(self, loc: Path) -> Optional[FileObj]:
@@ -1323,7 +1337,7 @@ class LookupMulti(LookupSingular):  # {{{
 #}}}
 
 class LookupPrj(LookupMulti): #{{{
-    TOML_KEYS = ["top_vhdl_file", "top_verilog_file", "top_entity"]
+    TOML_KEYS = ["top_vhdl_file", "top_verilog_file", "to_x_bd_file", "top_entity"]
 
     def __init__(
             self, look_subs: List[LookupMulti]) : #, file_list: List[Tuple[str, Path]] = [] ):
@@ -1343,9 +1357,15 @@ class LookupPrj(LookupMulti): #{{{
 
         look = LookupPrj(look_subs)
         look.initalise_from_config_dict(config, work_dir, top_lib=top_lib, **kwargs)
-
-        if "top_vhdl_file" in config and "top_verilog_file" in config:
-            raise RuntimeError("Only top_vhdl_file or top_verilog_file file is supported")
+        sum = 0
+        if "top_vhdl_file" in config:
+            sum += 1
+        if "top_verilog_file" in config:
+            sum += 1
+        if "top_x_bd_file" in config:
+            sum += 1
+        if sum > 1:
+            raise RuntimeError("Only top_vhdl_file or top_verilog_file or top_x_bd_file is supported")
 
         if "top_vhdl_file" in config:
 
@@ -1364,7 +1384,7 @@ class LookupPrj(LookupMulti): #{{{
             
             lib = l[0][0]
             loc = Path(l[0][1])
-            look.set_top_vhdl_file(loc, lib)
+            look.set_top_file(loc, FileObjType.VHDL, lib)
 
         if "top_verilog_file" in config:
 
@@ -1385,7 +1405,28 @@ class LookupPrj(LookupMulti): #{{{
             loc = Path(l[0][1])
             if lib != LIB_DEFAULT:
                 log.error(f'verilog does not support libraries got lib {lib}')
-            look.set_top_verilog_file(loc)
+            look.set_top_file(loc, FileObjType.VERILOG)
+
+        if "top_x_bd_file" in config:
+
+            l = []
+
+            def call_back_func(lib: str, loc_str: str):
+                loc_str = work_dir / loc_str
+                n = (lib, loc_str)
+                if len(l) != 0:
+                    raise Exception(f"only supports one top_x_bd_file got {l[0]} and {n}")
+                l.append(n)
+
+            LookupSingular._process_config_opt_lib(config, "top_x_bd_file", call_back_func, top_lib=top_lib)
+
+            assert len(l) == 1
+            
+            lib = l[0][0]
+            loc = Path(l[0][1])
+            if lib != LIB_DEFAULT:
+                log.error(f'x_bd does not support libraries got lib {lib}')
+            look.set_top_file(loc, FileObjType.X_BD)
 
         if "top_entity" in config:
             name_list = []
@@ -1402,14 +1443,10 @@ class LookupPrj(LookupMulti): #{{{
 
         return look
 
-    def set_top_vhdl_file(self, loc: Path, lib=None):
-        self.f_obj_top = self.get_loc(loc, lib_to_add_to_if_not_found=lib)
+    def set_top_file(self, loc: Path, f_type : FileObjType=None, lib=None):
+        log.info(f'setting {loc} with type {f_type} as top')
+        self.f_obj_top = self.get_loc(loc, type_to_add_to_if_not_found=f_type, lib_to_add_to_if_not_found=lib)
         self._compile_order = None
-
-    def set_top_verilog_file(self, loc: Path, lib=None):
-        self.f_obj_top = self.get_loc(loc, lib_to_add_to_if_not_found=lib)
-        self._compile_order = None
-
 
     def set_top_entity(self, name, do_not_replace_top_file=True):
         if do_not_replace_top_file and self.f_obj_top is not None:
@@ -1419,14 +1456,13 @@ class LookupPrj(LookupMulti): #{{{
 
         else:
             f_obj = self.get_entity(name, f_obj_required_by=None)
+            assert f_obj is not None
             if isinstance(f_obj, FileObjVhdl):
                 log.info(f'top_entity {name} found in vhdl file {f_obj.loc}')
-                self.set_top_vhdl_file(f_obj.loc, f_obj.lib)
-            elif isinstance(f_obj, FileObjVerilog):
-                log.info(f'top_entity {name} found in verilog file {f_obj.loc}')
-                self.set_top_verilog_file(f_obj.loc)
+                self.set_top_file(f_obj.loc, f_obj.lib)
             else:
-                raise RuntimeError(f'Unexpected file object type {type(f_obj)} for top level module')
+                log.info(f'top_entity {name} found in file {f_obj.loc}')
+                self.set_top_file(f_obj.loc)
 
     def has_top_file(self) -> bool:
         return self.f_obj_top is not None
@@ -1576,7 +1612,7 @@ def create_lookup_from_toml(
 # }}}
 
 # {{{ Main method handling
-def extract_lib_compiler_order(s)-> Tuple[str, str]:
+def extract_tuple_str(s)-> Tuple[str, str]:
     try:
         lib, f = s.split(':')
         return lib, f
@@ -1603,55 +1639,40 @@ def hdldepends():
         type=str,
         help="Paths to / File Names of, the config TOML input file(s).",
     )
-    parser.add_argument("--top-vhdl-file", type=str, help="Top level file to use")
-    parser.add_argument("--top-verilog-file", type=str, help="Top level file to use")
-    parser.add_argument("--top-entity", type=str, help="Top entity to use")
-    parser.add_argument("--top-lib", type=str, help="Top level library")
+    parser.add_argument("--top-file", type=str, help="Location to top level file (expects file to already be added)")
+    parser.add_argument("--top-file-type", type=extract_tuple_str, help="Expects '<type>:<file>' Location to top level file (will add the file if not already added")
+    parser.add_argument("--top-entity", type=str, help="Top level entity to use (expects entity to already be added)")
+    parser.add_argument("--top-vhdl-lib", type=str, help="Top level VHDL library")
     parser.add_argument(
         "--compile-order", type=str, help="Path to the compile order output file."
     )
     parser.add_argument(
-        "--compile-order-vhdl", type=str, help="Path to the VHDL compile order output file."
+        "--compile-order-type", nargs ="+", type=extract_tuple_str, help="Expects '<type>:<file>' Write compile order of passed  <type> to <file>."
     )
     parser.add_argument(
-        "--compile-order-verilog", type=str, help="Path to the Verilog compile order output file"
-    )
-    parser.add_argument(
-        "--compile-order-lib", nargs ="+", type=extract_lib_compiler_order, help="Expects 'lib:file' where 'file' is location to write the compile order of libary 'lib'."
-    )
-    parser.add_argument(
-        "--compile-order-vhdl-lib", nargs ="+", type=extract_lib_compiler_order, help="Expects 'lib:file' where 'file' is location to write the VHDL compile order of libary 'lib'."
+        "--compile-order-vhdl-lib", nargs ="+", type=extract_tuple_str, help="Expects '<lib>:<file>' where 'file' is location to write the VHDL compile order of libary 'lib'."
     )
     parser.add_argument(
         "--file-list", type=str, help="Output full file list of in project"
     )
     parser.add_argument(
-        "--file-list-vhdl", type=str, help="Output full VHDL file list of in project"
+        "--file-list-type", nargs="+", type=extract_tuple_str, help="Output full VHDL file list of in project"
     )
     parser.add_argument(
-        "--file-list-verilog", type=str, help="Output Verilog list of in project"
+        "--file-list-vhdl-lib", nargs="+", type=extract_tuple_str, help="Expects '<lib>:<file>' where <file> is location to write the file list of VHDL library <lib>."
     )
-    parser.add_argument(
-        "--file-list-lib", nargs ="+", type=extract_lib_compiler_order, help="Expects 'lib:file' where 'file' is location to write the file list of library 'lib'."
-    )
-    parser.add_argument(
-        "--file-list-vhdl-lib", nargs ="+", type=extract_lib_compiler_order, help="Expects 'lib:file' where 'file' is location to write the VHDL file list of library 'lib'."
-    )
-
     args = parser.parse_args()
-
-    if args.top_vhdl_file and args.top_verilog_file:
-        raise RuntimeError('set top_vhdl_file or top_verilog_file')
 
     set_log_level_from_verbose(args)
 
     work_dir=Path('.')
     top_lib = None
-    if args.top_lib:
-        top_lib = args.top_lib
+    if args.top_vhdl_lib:
+        top_lib = args.top_vhdl_lib
 
     attemp_read_pickle = not args.clear_pickle and not args.no_pickle
     write_pickle = not args.no_pickle
+    look = None
     if args.config_file:
         if len(args.config_file) == 1:
             log.debug('creating top level project toml')
@@ -1668,13 +1689,18 @@ def hdldepends():
                 )
             look = LookupPrj(look_subs)
 
-    if args.top_vhdl_file:
-        look.set_top_vhdl_file(Path(args.top_vhdl_file), "work")
+    assert look is not None
 
-    if args.top_verilog_file:
-        look.set_top_verilog_file(Path(args.top_verilog_file))
+    if args.top_file_type:
+        look.set_top_file(Path(args.top_file))
+
+    if args.top_file:
+        assert isinstance(look, LookupPrj)
+        look.set_top_file(Path(args.top_file))
+
 
     if args.top_entity:
+        assert isinstance(look, LookupPrj)
         lib = top_lib
         if lib is None:
             lib = 'work'
@@ -1682,39 +1708,41 @@ def hdldepends():
         look.set_top_entity(name, do_not_replace_top_file=True)
 
     if look.has_top_file():
+        assert isinstance(look, LookupPrj)
         look.print_compile_order()
 
     if args.file_list is not None:
         look.write_file_list(Path(args.file_list))
 
-    if args.file_list_vhdl is not None:
-        look.write_file_list(Path(args.file_list_vhdl), FileObjType.VHDL)
-
-    if args.file_list_verilog is not None:
-        look.write_file_list(Path(args.file_list_verilog), FileObjType.VERILOG)
-
-    if args.file_list_lib is not None:
-        for lib, f in args.file_list_lib:
-            look.write_file_list(Path(f), None, lib)
+    if args.file_list_type is not None:
+        for f_type_str, file_out_str in args.file_list_type:
+            f_type = string_to_FileObjType(f_type_str)
+            look.write_file_list(Path(file_out_str), f_type)
 
     if args.file_list_vhdl_lib is not None:
         for lib, f in args.file_list_vhdl_lib:
             look.write_file_list(Path(f), FileObjType.VHDL, lib)
 
     if args.compile_order is not None:
+        assert(look.has_top_file())
+        assert isinstance(look, LookupPrj)
         look.write_compile_order(Path(args.compile_order))
 
-    if args.compile_order_lib is not None:
-        for lib, f in args.compile_order_lib:
-            look.write_compile_order_lib(Path(f), lib)
-
-    if args.compile_order_vhdl is not None:
-        look.write_compile_order(Path(args.compile_order_vhdl), FileObjType.VHDL)
-
-    if args.compile_order_verilog is not None:
-        look.write_compile_order_lib(Path(args.compile_order_verilog), LIB_DEFAULT, FileObjType.VERILOG)
+    if args.compile_order_type is not None:
+        assert(look.has_top_file())
+        assert isinstance(look, LookupPrj)
+        for f_type_str, file_out_str in args.compile_order_type:
+            f_type = string_to_FileObjType(f_type_str)
+            loc = Path(file_out_str)
+            if f_type == FileObjType.VHDL:
+                look.write_compile_order(loc, f_type)
+            else:
+                look.write_compile_order_lib(loc, LIB_DEFAULT, f_type)
+                
 
     if args.compile_order_vhdl_lib is not None:
+        assert(look.has_top_file())
+        assert isinstance(look, LookupPrj)
         for lib, f in args.compile_order_vhdl_lib:
             look.write_compile_order_lib(Path(f), lib, FileObjType.VHDL)
 
