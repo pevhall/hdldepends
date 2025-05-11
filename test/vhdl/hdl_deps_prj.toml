@@ -1,12 +1,12 @@
 
 sub ='hdl_deps_sub1.toml'
 ignore_components = 'delComp2'
-other_files_file = 'extern_deps.txt'
-top_vhdl_file = './del.vhd'
+'other_files_file@p' = 'extern_deps.txt'
+'top_vhdl_file@p' = './del.vhd'
 #top_entity = 'del'
-vhdl_files = ['./del3.vhd', './bd_hdl.vhd']
-verilog_files = './counter.v'
-x_bd_files_glob = './*.bd'
+'vhdl_files@p' = ['./del3.vhd', './bd_hdl.vhd']
+'verilog_files@p' = './counter.v'
+'x_bd_files_glob@p' = './*.bd'
 
 
 vhdl_package_skip_order = { xpm ='{VIV_LIB}/xpm_VCOMP.vhd'}
