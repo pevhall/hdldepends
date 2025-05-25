@@ -66,7 +66,7 @@ def resolve_abs_path(dir: Path):
         dir = dir.resolve()
     return dir
 
-def get_file_modification_time(f: Path) -> int:
+def get_file_modification_time(f: Path):
     return f.lstat().st_mtime
 
 def str_to_name(s: str):
@@ -84,11 +84,11 @@ def contains_any(a: List, b: List) -> bool:
             return True
     return False
 
-def key_split_opt_ver(k : str):
+def key_split_opt_ver(k : str) -> Tuple[str, Optional[str]]:
     split_k = k.split(TOML_KEY_VER_SEP)
     lsk = len(split_k)
     if not (lsk == 1 or lsk == 2):
-        raise Exeption(f'ERROR: key {k}, can only have upto 1 {TOML_KEY_VER_SEP}')
+        raise Exception(f'ERROR: key {k}, can only have upto 1 {TOML_KEY_VER_SEP}')
     ver = None
     if lsk == 2:
         ver = split_k[1]
@@ -96,7 +96,7 @@ def key_split_opt_ver(k : str):
 
 
 
-def keys_rm_opt_ver( keys : List[str]):
+def keys_rm_opt_ver( keys : List[str]) -> List[str]:
     return [key_split_opt_ver(k)[0]  for k in keys ]
 
 def issue_key(good_keys: List, keys: List) -> Optional[str]:
@@ -209,14 +209,30 @@ class Name: # {{{
 #}}}
 
 class Lookup: #{{{
-    def get_vhdl_package(self, name: Name, f_obj_required_by : Optional["FileObj"]):
-        pass
+    def __init__(self):
+        self.ignore_components : set[str] = set()
 
-    def get_entity(self, name: Name, f_obj_required_by : Optional["FileObj"]):
-        pass
+    def get_vhdl_package(self, name: Name, f_obj_required_by : Optional["FileObjVhdl"]) -> Optional["FileObjVhdl"]:
+        raise Exception("Virtual called")
+
+    def get_entity(self, name: Name, f_obj_required_by : Optional["FileObj"]) -> Optional["FileObj"]:
+        raise Exception("Virtual called")
 
     def add_loc(self, loc: Path, f_obj: "FileObj"):
         pass
+
+    def add_entity(self, name: Name, f_obj: "FileObj"):
+        pass
+
+    def check_if_skip_from_order(self, loc:Path)->bool:
+        raise Exception("Virtual called")
+
+    def add_verilog_file_name(self, file_name: str, f_obj : "FileObjVerilog"):
+        pass
+
+    def add_vhdl_package(self, name: Name, f_obj: "FileObjVhdl"):
+        pass
+
 #}}}
 
 # Constructs to handle files {{{
@@ -287,6 +303,18 @@ class FileObj:
 
         return file_deps
 
+    def parse_file_again(self)->"FileObj":
+        raise Exception("must be overloaded should be unreachable")
+
+    def equivalent(self, other : "FileObj"):
+        result = (self.loc == other.loc
+                  and self.lib == other.lib
+                  and self.entities == other.entities
+                  and self.entity_deps == other.entity_deps
+                  and self.f_type == other.f_type
+                  and self.ver == other.ver
+                  )
+        return result
 
     def _get_compile_order(
         self, look: Lookup, files_passed=[], components_missed=[], level=0
@@ -310,10 +338,8 @@ class FileObj:
     def update(self) -> Tuple[bool, bool]:
         """Returns True if the dependencies have changed, Returns True if file was modified"""
         if self.requires_update():
-            equivalent = True
-            if isinstance(self, FileObjVhdl) or isinstance(self, FileObjVerilog):
-                f_obj = self.parse_file_again()
-                equivalent = f_obj.equivalent(self)
+            f_obj = self.parse_file_again()
+            equivalent = f_obj.equivalent(self)
             if equivalent:
                 log.info(f'file {self.loc} updated but dependencies remain unchanaged')
                 self.modification_time = f_obj.modification_time
@@ -335,6 +361,9 @@ class FileObjOther(FileObj):
     def _file_type_str_class(self) -> str:
         return "Other"
 
+    def parse_file_again(self)->FileObj:
+        return self
+
 class FileObjXBd(FileObj):
     def __init__(self, loc: Path, ver : Optional[str]):
         super().__init__(loc, ver)
@@ -343,6 +372,11 @@ class FileObjXBd(FileObj):
     @property
     def _file_type_str_class(self) -> str:
         return "X_BD"
+
+    def parse_file_again(self)->FileObj:
+        assert self.loc is Path
+        assert self.ver is str or self.ver is None
+        return parse_x_bd_file(None, loc=self.loc, ver=self.ver)
 
 class FileObjVerilog(FileObj):
 
@@ -370,33 +404,34 @@ class FileObjVerilog(FileObj):
         return file_deps
 
     def get_verilog_include_deps(self, look : Lookup) -> List[FileObj]:
-        file_deps = []
-
-        for name, is_sys in self.verilog_includes:
-            f_obj = look.get_verilog_file(name, self)
-            if f_obj is not None:
-                self._add_to_f_deps(file_deps, f_obj)
-            else:
-                if is_sys:
-                    log.warning('could not find sys include')
-                else:
-                    log.error('could not find sys include')
-        return file_deps
+        raise Exception("TODO!!!")
+        # file_deps = []
+        #
+        # for name, is_sys in self.verilog_includes:
+        #     f_obj = look.get_verilog_file(name, self)
+        #     if f_obj is not None:
+        #         self._add_to_f_deps(file_deps, f_obj)
+        #     else:
+        #         if is_sys:
+        #             log.warning('could not find sys include')
+        #         else:
+        #             log.error('could not find sys include')
+        # return file_deps
 
     def parse_file_again(self)->FileObj:
-        return parse_verilog_file(None, self.loc, self.ver)
+        assert self.ver is str or self.ver is None
+        return parse_verilog_file(None, loc=self.loc, ver=self.ver)
 
 
     def equivalent(self, other : FileObj):
         if not isinstance(other, FileObjVerilog):
             return False
 
-        result = (self.loc      == other.loc
-            and self.verilog_includes == other.verilog_includes
-            and self.entities == other.entities
-            and self.entity_deps == other.entity_deps)
-            #modificaiton time and level are not checked
-        return result
+        result = (self.verilog_includes == other.verilog_includes)
+        if not result:
+            return result
+
+        return FileObj.equivalent(self, other)
         
 
 class FileObjVhdl(FileObj):
@@ -423,7 +458,7 @@ class FileObjVhdl(FileObj):
     def get_file_deps(self, look: Lookup, components_missed = []) -> List[FileObj]:
         file_deps = super().get_file_deps(look)
         file_deps += self.get_vhdl_package_deps(look)
- 
+
         if len(self.vhdl_component_deps) > 0:
             file_package_deps = self.get_vhdl_package_deps(look)
             for component in self.vhdl_component_deps:
@@ -445,9 +480,10 @@ class FileObjVhdl(FileObj):
                     file_deps.append(f_obj)
                 else:
                     for f_obj in file_package_deps:
-                        if component in f_obj.vhdl_component_decl:
-                            found = True
-                            break
+                        if isinstance(f_obj, FileObjVhdl):
+                            if component in f_obj.vhdl_component_decl:
+                                found = True
+                                break
                 if not found:
                     if component not in components_missed:
                         log.warning(f'File {self.loc} cannot find component declartion for component dependency {component}')
@@ -470,14 +506,13 @@ class FileObjVhdl(FileObj):
         if not isinstance(other, FileObjVhdl):
             return False
 
-        result = (self.loc      == other.loc
-            and self.lib      == other.lib
-            and self.vhdl_packages == other.vhdl_packages
-            and self.entities == other.entities
-            and self.vhdl_package_deps == other.vhdl_package_deps
-            and self.entity_deps == other.entity_deps)
-            #modificaiton time and level are not checked
-        return result
+        result = (self.vhdl_packages == other.vhdl_packages
+            and self.vhdl_package_deps == other.vhdl_package_deps)
+           
+        if not result:
+            return result
+        
+        return FileObj.equivalent(self, other)
 
 class ConflictFileObj:
     def __init__(self, conflict_list: List[FileObj]):
@@ -497,6 +532,8 @@ class ConflictFileObj:
         for loc in self.loc_2_file_obj.keys():
             log.error(f"\t{loc}")
 
+    def get_f_objs(self):
+        return self.loc_2_file_obj.values()
 
 FileObjLookup = Union[ConflictFileObj, FileObj]
 
@@ -687,7 +724,7 @@ def verilog_extract_module_declarations(verilog_code):
     return declarations
 
 
-def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : str) -> FileObjVerilog:
+def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjVerilog:
     log.info(f"passing Verilog file {loc}:")
 
     if loc.suffix != '.v':
@@ -724,7 +761,7 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : str) -> FileOb
 #}}}
 
 #Pharse X_BD: Xilinx Block Digarm File {{{
-def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : str) -> FileObjXBd:
+def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjXBd:
     log.info(f"parsing Xilinx BD file {loc}:")
     with open(loc, "rb") as toml_f:
         bd_dict = json.load(toml_f)
@@ -803,12 +840,12 @@ class LookupSingular(Lookup): # {{{
         self.package_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.entity_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.loc_2_file_obj: dict[Path, FileObjLookup] = {}
-        self.verilog_file_name_2_file_obj : dict[str : FileObjVerilog] = {}
+        self.verilog_file_name_2_file_obj : dict[str, FileObjVerilog] = {}
         self.ignore_set_libs: set[str] = set()
         self.ignore_set_packages: set[Name] = set()
         self.ignore_set_entities: set[Name] = set()
         self.toml_loc: Optional[Path] = None
-        self.toml_modification_time = None
+        self.toml_modification_time: Optional[float]= None
         self.top_lib : Optional[str] = None
         self.ignore_components : set[str] = set()
         self.files_2_skip_from_order : set[Path] = set()
@@ -823,11 +860,13 @@ class LookupSingular(Lookup): # {{{
             if not self.allow_duplicates:
                 raise Exception(f"ERROR: tried to add {key} twice")
             item = d[key]
+            conflict_obj = None
             if isinstance(item, FileObj):
-                conflict_obj = ConflictFileObj((item, f_obj))
+                conflict_obj = ConflictFileObj( [item, f_obj])
             elif isinstance(item, ConflictFileObj):
                 conflict_obj = item
                 conflict_obj.add_f_obj(f_obj)
+            assert conflict_obj is not None
             d[key] = conflict_obj
         else:
             d[key] = f_obj
@@ -908,7 +947,7 @@ class LookupSingular(Lookup): # {{{
         with open(pickle_loc, "wb") as pickle_f:
             pickle.dump(self, pickle_f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def has_top_file(self):
+    def has_top_file(self) -> bool:
         return False
 
     def check_for_src_files_updates(self) -> bool:
@@ -916,6 +955,10 @@ class LookupSingular(Lookup): # {{{
         compile_order_out_of_date = False
         any_changes = False
         for _, f_obj in self.loc_2_file_obj.items():
+            if isinstance(f_obj, ConflictFileObj):
+                temp = ','.join([str(cf_obj.loc) for cf_obj in f_obj.get_f_objs()])
+                log.warning("Conflicted file objects: "+temp) #HERE
+                return True
             dependency_changes, changes = f_obj.update()
 
             if dependency_changes:
@@ -929,6 +972,7 @@ class LookupSingular(Lookup): # {{{
             self.package_name_2_file_obj = {}
             self.entity_name_2_file_obj = {}
             for _, f_obj in self.loc_2_file_obj.items():
+                assert isinstance(f_obj, FileObj)
                 f_obj.register_with_lookup(self, skip_loc=True)
         
         return any_changes
@@ -980,6 +1024,7 @@ class LookupSingular(Lookup): # {{{
         log.info(f"{key} = {list(result)}")
         return result
 
+    @staticmethod
     def extract_set_name_from_config(
             config: dict, key: str, top_lib : Optional[str]
     ) -> Set[Name]:
@@ -1019,7 +1064,7 @@ class LookupSingular(Lookup): # {{{
 
         if verilog_file_list is None:
             verilog_file_list = LookupSingular.get_verilog_file_list_from_config_dict(
-                config, work_dir, top_lib
+                config, work_dir, top_lib=top_lib
             )
 
         if other_file_list is None:
@@ -1096,7 +1141,7 @@ class LookupSingular(Lookup): # {{{
 
         for lib, loc, ver in common_file_list:
             if lib != LIB_DEFAULT:
-                log.error(f'Files types not VHDL must have default library {LIB_DEFAULT} got library {lib} on file {loc}')
+                log.error(f'Files types not VHDL must have default library {LIB_DEFAULT} got library {lib} on file {loc} (ver {ver})')
 
         return [(loc, ver) for _, loc, ver in common_file_list]
     
@@ -1131,7 +1176,7 @@ class LookupSingular(Lookup): # {{{
     def check_if_skip_from_order(self, loc:Path):
         return loc in self.files_2_skip_from_order
 
-    def register_other_file_list(self, other_file_list):
+    def register_other_file_list(self, other_file_list : List[Tuple[Path, str]]):
         self.other_file_list = other_file_list
         for loc, ver in other_file_list:
             
@@ -1141,17 +1186,17 @@ class LookupSingular(Lookup): # {{{
             self.entity_name_2_file_obj[entity_name] = f_obj
             self.loc_2_file_obj[loc] = f_obj
 
-    def register_x_bd_file_list(self, x_bd_file_list):
+    def register_x_bd_file_list(self, x_bd_file_list : List[Tuple[Path, str]]):
         self.x_bd_file_list = x_bd_file_list
         for loc, ver in x_bd_file_list:
             parse_x_bd_file(self, loc, ver);
 
-    def register_vhdl_file_list(self, vhdl_file_list : List[Tuple[str, Path]]):
+    def register_vhdl_file_list(self, vhdl_file_list : List[Tuple[str, Path, str]]):
         self.vhdl_file_list = vhdl_file_list
         for lib, loc, ver in vhdl_file_list:
             parse_vhdl_file(self, loc, lib=lib, ver=ver)
 
-    def register_verilog_file_list(self, verilog_file_list : List[Path]):
+    def register_verilog_file_list(self, verilog_file_list : List[Tuple[Path, str]]):
         self.verilog_file_list = verilog_file_list
         for loc, ver in verilog_file_list:
             parse_verilog_file(self, loc, ver=ver)
@@ -1162,7 +1207,6 @@ class LookupSingular(Lookup): # {{{
         inst = LookupSingular()
         inst.initalise_from_config_dict(config, work_dir, **kwargs)
         return inst
-
 
 
     def add_vhdl_package(self, name: Name, f_obj: FileObjVhdl):
@@ -1199,6 +1243,7 @@ class LookupSingular(Lookup): # {{{
 
         item = self.package_name_2_file_obj[name]
         if isinstance(item, FileObj):
+            assert isinstance(item,FileObjVhdl)
             return item
         elif isinstance(item, ConflictFileObj):
             item.log_confict(name)
@@ -1232,6 +1277,7 @@ class LookupSingular(Lookup): # {{{
     def get_file_list(self, lib:Optional[str]=None):
         file_list = []
         for f_obj in self.loc_2_file_obj.values():
+            assert not isinstance(f_obj, ConflictFileObj)
             if f_obj.loc in self.files_2_skip_from_order:
                 continue #skip
             if lib is None or lib == f_obj.lib:
@@ -1272,7 +1318,7 @@ class LookupMulti(LookupSingular):  # {{{
         look.initalise_from_config_dict(config, work_dir, **kwargs)
         return look
 
-    def register_vhdl_file_list(self, vhdl_file_list:List[Tuple[Path,str]]):
+    def register_vhdl_file_list(self, vhdl_file_list:List[Tuple[str,Path,str]]):
         self.vhdl_file_list = vhdl_file_list
         for lib, loc, ver in vhdl_file_list:
             f_obj = self._get_loc_from_common(loc)
@@ -1286,14 +1332,13 @@ class LookupMulti(LookupSingular):  # {{{
                 # not passed in common lookup pass in prj lookup
                 f_obj = parse_vhdl_file(self, loc, lib=lib, ver=ver)
 
-    def register_verilog_file_list(self, verilog_file_list:List[Path:str]):
+    def register_verilog_file_list(self, verilog_file_list:List):
         log.debug(f'register_verilog_file_list({verilog_file_list=}) called')
         self.verilog_file_list = verilog_file_list
         for loc, ver in verilog_file_list:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is not None:
                 f_obj.register_with_lookup(self)
-                assert(f_obj.lib == lib)
                 assert(f_obj.ver == ver)
             else:
                 f_obj = parse_verilog_file(self, loc, ver)
@@ -1325,7 +1370,8 @@ class LookupMulti(LookupSingular):  # {{{
     def _get_loc_from_common(self, loc: Path) -> Optional[FileObj]:
         for l_common in self.look_subs:
             if l_common.has_loc(loc):
-                return l_common.get_loc(loc)
+                f_obj = l_common.get_loc(loc)
+                assert isinstance(f_obj, FileObj)
         return None
 
     def check_if_skip_from_order(self, loc:Path):
@@ -1363,10 +1409,13 @@ class LookupMulti(LookupSingular):  # {{{
 
     def get_vhdl_package(self, name: Name, f_obj_required_by : Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
         def cb(name: Name, f_obj_required_by : Optional[FileObj]):
+            assert f_obj_required_by is None or isinstance(f_obj_required_by, FileObjVhdl)
             return LookupSingular.get_vhdl_package(self, name, f_obj_required_by)
 
         call_back_func_arr = [cb] + [l.get_vhdl_package for l in self.look_subs]
-        return self._get_named_item("package", name, call_back_func_arr, f_obj_required_by)
+        f_obj = self._get_named_item("package", name, call_back_func_arr, f_obj_required_by)
+        assert f_obj is None or isinstance(f_obj, FileObjVhdl)
+        return f_obj
 
     def get_entity(self, name: Name, f_obj_required_by : Optional[FileObj]) -> Optional[FileObj]:
         def cb(name: Name, f_obj_required_by : Optional[FileObj]):
@@ -1388,13 +1437,13 @@ class LookupPrj(LookupMulti): #{{{
     TOML_KEYS_OPT_VER = ["top_vhdl_file", "top_verilog_file", "top_x_bd_file"]
 
     def __init__(
-            self, look_subs: List[LookupMulti]) : #, file_list: List[Tuple[str, Path]] = [] ):
+            self, look_subs: List[LookupSingular]) : #, file_list: List[Tuple[str, Path]] = [] ):
         log.debug('LookupPrj::__init__')
         super().__init__(look_subs)
         self.f_obj_top = None
         self._compile_order = None
 
-    def set_top_lib(self, top_lib : Optional[str]):
+    def set_top_lib(self, top_lib : Optional[str] = None):
         self._compile_order = None
         super().set_top_lib(top_lib)
 
@@ -1416,19 +1465,22 @@ class LookupPrj(LookupMulti): #{{{
             raise RuntimeError("Only top_vhdl_file or top_verilog_file or top_x_bd_file is supported")
 
 
-        config_keys = keys_rm_opt_ver(config.keys())
+        config_keys = config.keys()
+        # assert isinstance(config_keys, List)
+        # assert all(isinstance(item, str) for item in config_keys)
+        config_keys = keys_rm_opt_ver(config_keys)
         if "top_vhdl_file" in config_keys:
 
             l = []
 
-            def call_back_func(lib: str, loc_str: str, ver:str):
-                loc_str = work_dir / loc_str
-                n = (lib, loc_str, ver)
+            def callback(lib: str, loc_str: str, ver:str):
+                loc = work_dir / loc_str
+                n = (lib, loc, ver)
                 if len(l) != 0:
                     raise Exception(f"only supports one top_vhdl_file got {l[0]} and {n}")
                 l.append(n)
 
-            LookupSingular._process_config_opt_lib(config, "top_vhdl_file", with_ver=True, callback=call_back_func, top_lib=top_lib)
+            LookupSingular._process_config_opt_lib(config, "top_vhdl_file", with_ver=True, callback=callback, top_lib=top_lib)
 
             assert len(l) == 1
             
@@ -1442,14 +1494,14 @@ class LookupPrj(LookupMulti): #{{{
 
             l = []
 
-            def call_back_func(lib: str, loc_str: str, ver : str):
-                loc_str = work_dir / loc_str
-                n = (lib, loc_str, ver)
+            def callback(lib: str, loc_str: str, ver : str):
+                loc = work_dir / loc_str
+                n = (lib, loc, ver)
                 if len(l) != 0:
                     raise Exception(f"only supports one top_verilog_file got {l[0]} and {n}")
                 l.append(n)
 
-            LookupSingular._process_config_opt_lib(config, "top_verilog_file", with_ver=True, callback=call_back_func, top_lib=top_lib)
+            LookupSingular._process_config_opt_lib(config, "top_verilog_file", with_ver=True, callback=callback, top_lib=top_lib)
 
             assert len(l) == 1
             
@@ -1464,14 +1516,14 @@ class LookupPrj(LookupMulti): #{{{
 
             l = []
 
-            def call_back_func(lib: str, loc_str: str, ver):
-                loc_str = work_dir / loc_str
-                n = (lib, loc_str, ver)
+            def callback(lib: str, loc_str: str, ver):
+                loc = work_dir / loc_str
+                n = (lib, loc, ver)
                 if len(l) != 0:
                     raise Exception(f"only supports one top_x_bd_file got {l[0]} and {n}")
                 l.append(n)
 
-            LookupSingular._process_config_opt_lib(config, "top_x_bd_file", with_ver=True, callback=call_back_func, top_lib=top_lib)
+            LookupSingular._process_config_opt_lib(config, "top_x_bd_file", with_ver=True, callback=callback, top_lib=top_lib)
 
             assert len(l) == 1
             
@@ -1484,20 +1536,20 @@ class LookupPrj(LookupMulti): #{{{
 
         if "top_entity" in config:
             name_list = []
-            def call_back_func(lib: str, name_str: str):
+            def callback(lib: str, name_str: str):
                 name = Name(lib, name_str)
                 if len(name_list) != 0:
-                    raise Exception(f"only supports one entity but got {name_list[0]} and {n}")
+                    raise Exception(f"only supports one entity but got {name_list[0]} and {name}")
                 name_list.append(name)
 
-            LookupSingular._process_config_opt_lib(config, "top_entity", callback=call_back_func, top_lib=top_lib)
+            LookupSingular._process_config_opt_lib(config, "top_entity", with_ver=False, callback=callback, top_lib=top_lib)
             assert len(name_list) == 1
             name = name_list[0]
             look.set_top_entity(name, do_not_replace_top_file=True)
 
         return look
 
-    def set_top_file(self, loc: Path, f_type : FileObjType=None, lib=None, ver=None):
+    def set_top_file(self, loc: Path, f_type : Optional[FileObjType]=None, lib:str=LIB_DEFAULT, ver:Optional[str]=None):
         log.info(f'setting {loc} with type {f_type} as top')
         self.f_obj_top = self.get_loc(loc, type_to_add_to_if_not_found=f_type, lib_to_add_to_if_not_found=lib, ver_to_add_to_if_not_found=ver)
         self._compile_order = None
@@ -1506,14 +1558,15 @@ class LookupPrj(LookupMulti): #{{{
         if do_not_replace_top_file and self.f_obj_top is not None:
             f_obj = self.get_entity(name, f_obj_required_by=None)
             if f_obj != self.f_obj_top:
-                raise RuntimeError(f'cound not find entity {top_ent_name} in file {loc}')
+                assert isinstance(f_obj, FileObj)
+                raise RuntimeError(f'cound not find entity {name} in file {f_obj.loc}')
 
         else:
             f_obj = self.get_entity(name, f_obj_required_by=None)
             assert f_obj is not None
             if isinstance(f_obj, FileObjVhdl):
                 log.info(f'top_entity {name} found in vhdl file {f_obj.loc}')
-                self.set_top_file(f_obj.loc, f_obj.lib, ver=f_obj.ver)
+                self.set_top_file(f_obj.loc, lib=f_obj.lib, ver=f_obj.ver)
             else:
                 log.info(f'top_entity {name} found in file {f_obj.loc}')
                 self.set_top_file(f_obj.loc, ver=f_obj.ver)
@@ -1529,12 +1582,14 @@ class LookupPrj(LookupMulti): #{{{
                     "top_file must be declared in config or on command line"
                 )
 
+            assert isinstance(self.f_obj_top, FileObj)
             self._compile_order = self.f_obj_top.get_compile_order(self)
         return self._compile_order
 
     def print_compile_order(self):
         print("compile order:")
         for f_obj in self.compile_order:
+            assert isinstance(f_obj.level, int)
             print(f'  {f_obj.file_type_str+":":10} {"|---"*f_obj.level}{f_obj.lib}: {f_obj.loc}')
 
     def write_compile_order(self, compile_order_loc: Path, f_type : Optional[FileObjType]=None):
@@ -1632,20 +1687,26 @@ def create_lookup_from_toml(
             return inst
 
     # picke_loc = LookupSingular.toml_loc_to_pickle_loc(toml_loc)
-
-    error_key = issue_key(LookupPrj.TOML_KEYS_OTHER + LookupMulti.TOML_KEYS_OTHER + LookupSingular.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER + LookupMulti.TOML_KEYS_OPT_VER + LookupSingular.TOML_KEYS_OPT_VER, keys_rm_opt_ver(config.keys()))
+    config_keys = config.keys()
+    #TODO workout how to typecheck dict_keyes type
+    # print(f'config_keys.type {type(config_keys)}')
+    # assert isinstance(config_keys, Set)
+    # assert all(isinstance(item, str) for item in config_keys)
+    config_keys = keys_rm_opt_ver(config_keys)
+    error_key = issue_key(LookupPrj.TOML_KEYS_OTHER + LookupMulti.TOML_KEYS_OTHER + LookupSingular.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER + LookupMulti.TOML_KEYS_OPT_VER + LookupSingular.TOML_KEYS_OPT_VER, config_keys)
     if error_key is not None:
         raise KeyError(f"Got unexpected key {error_key} in file {toml_loc}")
-    #TODO check that TOML_KEYS_OTHER do not contain TOML_KEY_VER_SEP
 
-    if force_LookupPrj or contains_any(config.keys(), LookupPrj.TOML_KEYS_OTHER + keys_rm_opt_ver(LookupPrj.TOML_KEYS_OPT_VER)):
+    #TODO check that TOML_KEYS_OTHER do not contain TOML_KEY_VER_SEP!!!
+    if force_LookupPrj or contains_any(config_keys, LookupPrj.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER):
 
         log.info(f"create LookupPrj from {toml_loc}")
         inst = LookupPrj.create_from_config_dict(
             config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list=x_bd_file_list
         )
 
-    elif contains_any(config.keys(), LookupMulti.TOML_KEYS_OTHER + keys_rm_opt_ver(TOML_KEY_VER_SEP)):
+
+    elif contains_any(config_keys, LookupMulti.TOML_KEYS_OTHER + LookupMulti.TOML_KEYS_OPT_VER):
 
         log.info(f"create LookupMulti from {toml_loc}")
         inst = LookupMulti.create_from_config_dict(
@@ -1658,14 +1719,18 @@ def create_lookup_from_toml(
         )
 
     print(f'toml_loc {toml_loc}')
-    inst.toml_modification_time = get_file_modification_time(toml_loc)
+    time = get_file_modification_time(toml_loc)
+    assert(time is not None)
+    inst.toml_modification_time = time
 
     if write_pickle:
         look_subs = None
         if hasattr(inst, 'look_subs'):
+            assert isinstance(inst, LookupMulti) or isinstance(inst, LookupPrj)
             look_subs = inst.look_subs
         inst.save_to_pickle(pickle_loc)
         if look_subs is not None:
+            assert isinstance(inst, LookupMulti) or isinstance(inst, LookupPrj)
             inst.look_subs = look_subs
     return inst
 # }}}
