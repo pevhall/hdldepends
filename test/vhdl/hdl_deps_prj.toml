@@ -4,7 +4,7 @@ ignore_components = 'delComp2'
 'other_files_file@p' = 'extern_deps.txt'
 'top_vhdl_file@p' = './del.vhd'
 #top_entity = 'del'
-'vhdl_files@p' = ['./del3.vhd', './bd_hdl.vhd']
+'vhdl_files@p' = ['./del3.vhd', './bd_hdl.vhd','./led_controller.vhd']
 'verilog_files@p' = './counter.v'
 'x_bd_files_glob@p' = './*.bd'
 
