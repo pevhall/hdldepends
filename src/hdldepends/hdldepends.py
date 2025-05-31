@@ -760,7 +760,7 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str])
     return f_obj
 #}}}
 
-#Pharse X_BD: Xilinx Block Digarm File {{{
+#Parse X_BD: Xilinx Block Digarm File {{{
 def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjXBd:
     log.info(f"parsing Xilinx BD file {loc}:")
     with open(loc, "rb") as toml_f:
@@ -1598,7 +1598,10 @@ class LookupPrj(LookupMulti): #{{{
                 if f_type is not None:
                     if f_obj.f_type != f_type:
                         continue
-                f_order.write(f"{f_obj.lib} {f_obj.loc}\n")
+                    f_order.write(f"{f_obj.lib} {f_obj.loc}\n")
+                else:
+                    f_order.write(f"{f_obj.file_stype_str} {f_obj.lib} {f_obj.loc}\n")
+
 
     def write_compile_order_lib(self, compile_order_loc: Path, lib:str, f_type: Optional[FileObjType]=None):
         lines = 0
