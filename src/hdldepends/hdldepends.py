@@ -48,6 +48,8 @@ class log:
 
 TOML_KEY_VER_SEP = '@'
 
+HDL_DEPENDS_VERSION_NUM = 7
+
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
     loc_str = str(loc).format(**os.environ)
@@ -244,6 +246,8 @@ class FileObjType(Enum):
     VERILOG = auto()
     OTHER = auto()
     X_BD = auto()
+    X_XCI = auto()
+    DIRECT = auto()
 
 
 def string_to_FileObjType(s: str) -> FileObjType:
@@ -262,6 +266,7 @@ class FileObj:
         self.f_type : Optional[FileObjType] = None
         self.level = None
         self.ver = ver
+        self.direct_deps : List[loc] = [] 
 
     def requires_update(self):
         return self.get_modification_time_on_disk() != self.modification_time
@@ -328,6 +333,9 @@ class FileObj:
             if f_obj not in files_passed:
                 order += f_obj._get_compile_order(look, files_passed, components_missed = components_missed, level = level + 1)
         
+        for ddep in self.direct_deps:
+            ddep.level = level+1
+            order.append(ddep)
         order.append(self)
         self.level = level
         return order
@@ -364,6 +372,18 @@ class FileObjOther(FileObj):
     def parse_file_again(self)->FileObj:
         return self
 
+class FileObjDirect(FileObj):
+    def __init__(self, loc: Path, ver : Optional[str]):
+        super().__init__(loc, ver)
+        self.f_type : Optional[FileObjType] = FileObjType.DIRECT
+
+    @property
+    def _file_type_str_class(self) -> str:
+        return "Direct"
+
+    def parse_file_again(self)->FileObj:
+        return self
+
 class FileObjX(FileObj):
     def __init__(self, loc: Path, ver : Optional[str], x_tool_version : str, x_device : str):
         super().__init__(loc, ver)
@@ -383,6 +403,20 @@ class FileObjXBd(FileObjX):
         assert self.loc is Path
         assert self.ver is str or self.ver is None
         return parse_x_bd_file(None, loc=self.loc, ver=self.ver)
+
+class FileObjXXci(FileObjX):
+    def __init__(self, loc: Path, ver : Optional[str], x_tool_version : str, x_device : str):
+        super().__init__(loc, ver, x_tool_version, x_device)
+        self.f_type : Optional[FileObjType] = FileObjType.X_XCI
+
+    @property
+    def _file_type_str_class(self) -> str:
+        return "X_XCI"
+
+    def parse_file_again(self)->FileObj:
+        assert self.loc is Path
+        assert self.ver is str or self.ver is None
+        return parse_x_xci_file(None, loc=self.loc, ver=self.ver)
 
 class FileObjVerilog(FileObj):
 
@@ -533,13 +567,67 @@ class ConflictFileObj:
 
     def log_confict(self, key):
 
+        can_filter_on_version = True
+        for loc, f_obj in self.loc_2_file_obj.items():
+            if len(f_obj.x_tool_version) == 0:
+                can_filter_on_version = False
+
         log.error(f"Conflict on key {key} could not resolve between")
         log.error(f"  (please resolve buy adding the one of the files to the prject toml):")
-        for loc in self.loc_2_file_obj.keys():
-            log.error(f"\t{loc}")
+        if can_filter_on_version:
+            log.error(f"  (or you can filter using x_tool_version)")
+        for loc, f_obj in self.loc_2_file_obj.items():
+            x_info = ''
+            if len(f_obj.x_tool_version) != 0 or len(f_obj.x_device) != 0:
+                x_info = f' ({f_obj.x_tool_version} {f_obj.x_device})'
+            log.error(f"\t{loc}{x_info}")
 
     def get_f_objs(self):
         return self.loc_2_file_obj.values()
+
+    def resolve_conflict(self, x_tool_version : str, x_device : str) -> Optional[FileObj]:
+        log.debug(f'resolve_conflict ({x_tool_version}, {x_device})')
+        if len(x_tool_version) == 0 or len(x_device) == 0:
+            return None
+        chosen = None
+        got_version = False
+        matched = False
+        for f_obj in self.loc_2_file_obj.values():
+            if len(f_obj.x_tool_version) == 0 or len(f_obj.x_device) == 0:
+                return None
+
+            f_obj_got_version = x_tool_version == f_obj.x_tool_version
+            f_obj_matched = got_version and x_device == f_obj.x_device
+            
+            if f_obj_matched and matched:
+                log.error(f'Got a x_tool_version and x_device match for both files {f_obj.loc} and {chosen.loc} cannot resolve this issue')
+                return None
+
+            if x_tool_version < f_obj.x_tool_version:
+                log.debug(f'File {f_obj.loc} x_tool_version to low got {f_obj.x_tool_version} wanted {x_tool_version}')
+                continue
+
+            if chosen is not None:
+                if f_obj.x_tool_version < chosen.x_tool_version:
+                    continue
+                if f_obj.x_tool_version == chosen.x_tool_version:
+                    if f_obj.x_device != x_device:
+                        continue
+
+            got_version = f_obj_got_version
+            f_obj_matched = f_obj_matched
+            chosen = f_obj
+            if matched:
+                break
+
+        if not got_version:
+            log.warning(f'File has x_tool_version {chosen.x_tool_version} but wanted x_tool_version {x_tool_version} please upgrade it')
+        else:
+            log.warning(f'File has correct version but wrong x_devcie {chosen.x_tool_version} but wanted x_device {x_device} please update it')
+
+        return chosen
+            
+
 
 FileObjLookup = Union[ConflictFileObj, FileObj]
 
@@ -766,17 +854,70 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str])
     return f_obj
 #}}}
 
+#Parse X_XCI: Xilinx XCI IP File {{{
+def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjXXci:
+    log.info(f"parsing Xilinx XCI file {loc}:")
+    with open(loc, "rb") as json_f:
+        xci_dict = json.load(json_f)
+    ip_inst =  xci_dict["ip_inst"]
+    module_name = ip_inst["xci_name"]
+    name = Name(LIB_DEFAULT, module_name)
+
+    param = ip_inst['parameters']
+
+    prj_param = param['project_parameters']
+    def js_val(js):
+        assert len(js) == 1
+        return js[0]['value']
+    x_device = f"{js_val(prj_param['DEVICE'])}-{js_val(prj_param['PACKAGE'])}{js_val(prj_param['SPEEDGRADE'])}-{js_val(prj_param['TEMPERATURE_GRADE'])}"
+    x_device = x_device.lower()
+
+    run_param = param['runtime_parameters']
+    x_tool_version = js_val(run_param['SWVERSION'])
+
+    log.info(f"Xilinx XCI {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
+
+    direct_deps = []
+    folder = loc.parent
+    def append_direct_dep(f_str):
+        f_loc = Path(folder)/f_str
+        direct_deps.append(FileObjDirect(f_loc,ver=ver))
+
+
+    if 'component_parameters' in param:
+        comp_param = param['component_parameters']
+        if 'Coefficient_File' in comp_param:
+            coe_file = js_val(comp_param['Coefficient_File'])
+            log.info(f"Xilinx XCI {loc} has a direct coe file dependency {coe_file}")
+            append_direct_dep(coe_file)
+    if 'model_parameters' in param:
+        model_param = param['model_parameters']
+        if 'C_COEF_FILE' in model_param:
+            mif_file = js_val(model_param['C_COEF_FILE'])
+            log.info(f"Xilinx XCI {loc} has a direct mif file dependency {mif_file}")
+            append_direct_dep(mif_file)
+
+    f_obj = FileObjXXci(loc, ver, x_tool_version, x_device)
+    f_obj.entities.append(name)
+    f_obj.direct_deps = direct_deps
+    if look is not None:
+        f_obj.register_with_lookup(look)
+    return f_obj
+
+    
+#}}}
+
 #Parse X_BD: Xilinx Block Digarm File {{{
 def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjXBd:
     log.info(f"parsing Xilinx BD file {loc}:")
-    with open(loc, "rb") as toml_f:
-        bd_dict = json.load(toml_f)
+    with open(loc, "rb") as json_f:
+        bd_dict = json.load(json_f)
     design_dict = bd_dict["design"]
     design_info_dict = design_dict["design_info"]
     module_name = design_info_dict["name"]
     x_tool_version = design_info_dict["tool_version"]
     x_device = design_info_dict["device"]
-    log.debug(f"Xilinx BD {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
+    log.info(f"Xilinx BD {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
     f_obj = FileObjXBd(loc, ver, x_tool_version, x_device)
     name = Name(LIB_DEFAULT, module_name)
     f_obj.entities.append(name)
@@ -840,8 +981,11 @@ class LookupSingular(Lookup): # {{{
         "x_bd_files",
         "x_bd_files_file",
         "x_bd_files_glob",
+        "x_xci_files",
+        "x_xci_files_file",
+        "x_xci_files_glob",
     ]
-    VERSION = 5
+    VERSION = HDL_DEPENDS_VERSION_NUM
 
     def __init__(self, allow_duplicates: bool = True):
         log.debug('LookupSingular::__init__')
@@ -863,6 +1007,9 @@ class LookupSingular(Lookup): # {{{
         self.verilog_file_list = None
         self.other_file_list = None
         self.x_bd_file_list = None
+        self.x_xci_file_list = None
+        self.x_tool_version = ''
+        self.x_device = ''
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
         log.info(f'Adding {key} to dict')
@@ -945,12 +1092,20 @@ class LookupSingular(Lookup): # {{{
             log.info(f'Will not load from pickle as x_bd_file_list has changed')
             return None, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list
         
+        x_xci_file_list = LookupSingular.get_x_xci_file_list_from_config_dict(
+            config, toml_loc.parent, top_lib=top_lib
+        )
+
+        if x_xci_file_list != inst.x_xci_file_list:
+            log.info(f'Will not load from pickle as x_xci_file_list has changed')
+            return None, vhdl_file_list, verilog_file_list, other_file_list, x_xci_file_list
+        
         log.info(f"loaded from {pickle_loc}, updating required files")
         any_changes = inst.check_for_src_files_updates()
         if any_changes:
             log.info(f"Updating pickle with the changes detected on disk")
             inst.save_to_pickle(pickle_loc)
-        return inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list
+        return inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list, x_xci_file_list
 
     def save_to_pickle(self, pickle_loc: Path):
         log.info(f"Caching to {pickle_loc}")
@@ -1053,7 +1208,7 @@ class LookupSingular(Lookup): # {{{
         log.info(f"{key} = {l}")
         return set(l)
 
-    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str], vhdl_file_list=None, verilog_file_list=None, other_file_list=None, x_bd_file_list=None, add_std_pkg_ignore=True):
+    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str], vhdl_file_list=None, verilog_file_list=None, other_file_list=None, x_bd_file_list=None, x_xci_file_list=None, add_std_pkg_ignore=True):
 
         if 'top_lib' in config:
             self.top_lib = config['top_lib']
@@ -1093,6 +1248,11 @@ class LookupSingular(Lookup): # {{{
                 config, work_dir, top_lib=top_lib
             )
 
+        if x_xci_file_list is None:
+            x_xci_file_list = LookupSingular.get_x_xci_file_list_from_config_dict(
+                config, work_dir, top_lib=top_lib
+            )
+
         def add_file_to_list_skip_order(lib, loc_str):
             loc = path_abs_from_dir(work_dir, Path(loc_str))
             self.files_2_skip_from_order.add(loc)
@@ -1105,6 +1265,7 @@ class LookupSingular(Lookup): # {{{
         self.register_verilog_file_list(verilog_file_list)
         self.register_other_file_list(other_file_list)
         self.register_x_bd_file_list(x_bd_file_list)
+        self.register_x_xci_file_list(x_xci_file_list)
 
     @staticmethod
     def get_common_file_list_from_config_dict(common_tag : str, config: dict, work_dir: Path, top_lib : Optional[str]):
@@ -1189,6 +1350,10 @@ class LookupSingular(Lookup): # {{{
     def get_x_bd_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
         return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('x_bd', config, work_dir, top_lib)
 
+    @staticmethod
+    def get_x_xci_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
+        return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('x_xci', config, work_dir, top_lib)
+
     def check_if_skip_from_order(self, loc:Path):
         return loc in self.files_2_skip_from_order
 
@@ -1206,6 +1371,11 @@ class LookupSingular(Lookup): # {{{
         self.x_bd_file_list = x_bd_file_list
         for loc, ver in x_bd_file_list:
             parse_x_bd_file(self, loc, ver);
+
+    def register_x_xci_file_list(self, x_xci_file_list : List[Tuple[Path, str]]):
+        self.x_xci_file_list = x_xci_file_list
+        for loc, ver in x_xci_file_list:
+            parse_x_xci_file(self, loc, ver);
 
     def register_vhdl_file_list(self, vhdl_file_list : List[Tuple[str, Path, str]]):
         self.vhdl_file_list = vhdl_file_list
@@ -1281,6 +1451,9 @@ class LookupSingular(Lookup): # {{{
         if isinstance(item, FileObj):
             return item
         elif isinstance(item, ConflictFileObj):
+            resolved = item.resolve_conflict(x_tool_version=self.x_tool_version, x_device=self.x_device)
+            if isinstance(resolved, FileObj):
+                return resolved
             item.log_confict(name)
             raise KeyError(f"ERROR: confict on entity {name} required by {loc_str}")
 
@@ -1376,6 +1549,8 @@ class LookupMulti(LookupSingular):  # {{{
                         f_obj = parse_verilog_file(self, loc, ver)
                     elif type_to_add_to_if_not_found is FileObjType.X_BD:
                         f_obj = parse_x_bd_file(self, loc, ver)
+                    elif type_to_add_to_if_not_found is FileObjType.X_XCI:
+                        f_obj = parse_x_xci_file(self, loc, ver)
                     else:
                         raise TypeError(f'Unexpected top level file type:{type_to_add_to_if_not_found}')
                 else:
@@ -1699,8 +1874,9 @@ def create_lookup_from_toml(
     verilog_file_list = None
     other_file_list = None
     x_bd_file_list = None
+    x_xci_file_list = None 
     if attemp_read_pickle:
-        inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list= LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
+        inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list, x_xci_file_list = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
         if inst is not None:
             inst.look_subs = look_subs
             return inst
@@ -1721,7 +1897,7 @@ def create_lookup_from_toml(
 
         log.info(f"create LookupPrj from {toml_loc}")
         inst = LookupPrj.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list=x_bd_file_list
+            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list=x_bd_file_list, x_xci_file_list=x_xci_file_list
         )
 
 
@@ -1729,12 +1905,12 @@ def create_lookup_from_toml(
 
         log.info(f"create LookupMulti from {toml_loc}")
         inst = LookupMulti.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list = x_bd_file_list
+            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list = x_bd_file_list, x_xci_file_list=x_xci_file_list
         )
 
     else :
         inst = LookupSingular.create_from_config_dict(
-            config, work_dir=work_dir, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list=verilog_file_list, other_file_list = other_file_list, x_bd_file_list = x_bd_file_list
+            config, work_dir=work_dir, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list=verilog_file_list, other_file_list = other_file_list, x_bd_file_list = x_bd_file_list, x_xci_file_list=x_xci_file_list
         )
 
     print(f'toml_loc {toml_loc}')
@@ -1804,9 +1980,21 @@ def hdldepends():
     parser.add_argument(
         "--file-list-vhdl-lib", nargs="+", type=extract_tuple_str, help="Expects '<lib>:<file>' where <file> is location to write the file list of VHDL library <lib>."
     )
+    parser.add_argument( "--x-tool-version", type=str, help="Xilinx tool version (used for choosing x_bd and x_xci files)")
+    parser.add_argument( "--x-device", type=str, help="Xilinx device (used for choosing x_bd and x_xci files)")
     args = parser.parse_args()
 
     set_log_level_from_verbose(args)
+
+
+    
+    x_tool_version = args.x_tool_version
+    if x_tool_version is None:
+        x_tool_version = ''
+
+    x_device = args.x_device
+    if x_device is None:
+        x_device = ''
 
     work_dir=Path('.')
     top_lib = None
@@ -1820,8 +2008,10 @@ def hdldepends():
         if len(args.config_file) == 1:
             log.debug('creating top level project toml')
             look = create_lookup_from_toml(Path(args.config_file[0]), work_dir=work_dir,
-            force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
-        )
+                force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
+            )
+            look.x_tool_version = x_tool_version
+            look.x_device = x_device
         else:
             look_subs = []
             for c_toml in look_subs:
@@ -1831,6 +2021,8 @@ def hdldepends():
                     )
                 )
             look = LookupPrj(look_subs)
+            look.x_tool_version = x_tool_version
+            look.x_x_device = x_device
 
     assert look is not None
 

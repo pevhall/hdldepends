@@ -1,0 +1,8 @@
+; Example of a Distributed Arithmetic (DA) FIR Filter .COE file
+; with hex coefficients, 8 symmetrical taps, and 12-bit
+; coefficients.
+;
+; Compatible with all versions of the Distributed Arithmetic
+; FIR Filter which supports Virtex and Spartan
+Radix = 16;
+CoefData= 346, EDA, 0D6, F91, F91, 0D6, EDA, 346;

@@ -8,5 +8,8 @@ ignore_components = 'delComp2'
 'verilog_files@p' = './counter.v'
 'x_bd_files_glob@p' = './*.bd'
 
+'x_xci_files_glob@p' = ['./*.xci', './*/*.xci','!*delComp2.xci']
+
+
 
 vhdl_package_skip_order = { xpm ='{VIV_LIB}/xpm_VCOMP.vhd'}
