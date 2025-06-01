@@ -364,9 +364,15 @@ class FileObjOther(FileObj):
     def parse_file_again(self)->FileObj:
         return self
 
-class FileObjXBd(FileObj):
-    def __init__(self, loc: Path, ver : Optional[str]):
+class FileObjX(FileObj):
+    def __init__(self, loc: Path, ver : Optional[str], x_tool_version : str, x_device : str):
         super().__init__(loc, ver)
+        self.x_tool_version = x_tool_version
+        self.x_device = x_device
+
+class FileObjXBd(FileObjX):
+    def __init__(self, loc: Path, ver : Optional[str], x_tool_version : str, x_device : str):
+        super().__init__(loc, ver, x_tool_version, x_device)
         self.f_type : Optional[FileObjType] = FileObjType.X_BD
 
     @property
@@ -766,11 +772,15 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) ->
     with open(loc, "rb") as toml_f:
         bd_dict = json.load(toml_f)
     design_dict = bd_dict["design"]
-    module_name = design_dict["design_info"]["name"]
-    log.debug(f"Xilinx BD {loc} decares {module_name}")
-    f_obj = FileObjXBd(loc, ver)
+    design_info_dict = design_dict["design_info"]
+    module_name = design_info_dict["name"]
+    x_tool_version = design_info_dict["tool_version"]
+    x_device = design_info_dict["device"]
+    log.debug(f"Xilinx BD {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
+    f_obj = FileObjXBd(loc, ver, x_tool_version, x_device)
     name = Name(LIB_DEFAULT, module_name)
     f_obj.entities.append(name)
+    
     if 'components' in design_dict:
         for component_name, component in design_dict["components"].items():
             if 'reference_info' in component:
@@ -954,17 +964,23 @@ class LookupSingular(Lookup): # {{{
         """Returns True if there where any changes"""
         compile_order_out_of_date = False
         any_changes = False
-        for _, f_obj in self.loc_2_file_obj.items():
-            if isinstance(f_obj, ConflictFileObj):
-                temp = ','.join([str(cf_obj.loc) for cf_obj in f_obj.get_f_objs()])
-                log.warning("Conflicted file objects: "+temp) #HERE
-                return True
-            dependency_changes, changes = f_obj.update()
+        for _, f_obj_l in self.loc_2_file_obj.items():
+               
+            if isinstance(f_obj_l, ConflictFileObj):
+                # temp = ','.join([str(cf_obj.loc) for cf_obj in f_obj.get_f_objs()])
+                # log.warning("Conflicted file objects: "+temp) #HERE
+                # return True
+                f_objs = f_obj_l.get_f_objs()
+            else:
+                f_objs = make_list(f_obj_l)
 
-            if dependency_changes:
-                compile_order_out_of_date = True
-            if changes:
-                any_changes = True
+            for f_obj in f_objs:
+                dependency_changes, changes = f_obj.update()
+
+                if dependency_changes:
+                    compile_order_out_of_date = True
+                if changes:
+                    any_changes = True
 
         if compile_order_out_of_date:
             log.info('Compile order has change')
