@@ -3,7 +3,7 @@
   "ignore_components" : "delComp2",
   "other_files_file" : "extern_deps.txt",
   "top_vhdl_file" : "./del.vhd",
-  "vhdl_files" : "./del3.vhd",
+  "vhdl_files" : ["./del3.vhd", "./fir_compiler_0_sim_netlist.vhdl"],
 
   "package_file_skip_order" : { "xpm" :"xpm_VCOMP.vhd"}
     

@@ -248,5 +248,15 @@ your_instance_name : fir_compiler_0
     m_axis_data_tdata => m_axis_data_tdata
   );
 
+  your_instance_name : entity work.fir_compiler_0_sim
+  PORT MAP (
+    aclk => aclk,
+    s_axis_data_tvalid => s_axis_data_tvalid,
+    s_axis_data_tready => s_axis_data_tready,
+    s_axis_data_tdata => s_axis_data_tdata,
+    m_axis_data_tvalid => m_axis_data_tvalid,
+    m_axis_data_tdata => m_axis_data_tdata
+  );
+
 end architecture;
 

@@ -689,6 +689,12 @@ vhdl_regex_patterns = {
     "package_use": re.compile(
         r"\Wuse\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
     ),
+    "c_coef_file": re.compile(
+        r'_?attribute\s+C_COEF_FILE?\s+of\s+(\w+)\s*:\s*label\s+is\s+"([^"]+)"\s*;', re.IGNORECASE
+    ),
+    "is_du_within_envelope": re.compile(
+        r'_?attribute\s+is_du_within_envelope?\s+of\s+(\w+)\s*:\s*label\s+is\s+"true"\s*;', re.IGNORECASE
+    )
 }
 
 def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None) -> FileObjVhdl:
@@ -700,7 +706,11 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
     vhdl = vhdl_remove_comments(vhdl)
     vhdl = vhdl_remove_protected_code(vhdl)
     f_obj = FileObjVhdl(loc, lib=lib, ver=ver)
+    folder = loc.parent
 
+    deps_inst_dict_comp = {}
+    deps_inst_dict_direct = {} 
+    deps_inst_to_remove = []
     matches = {}
     for key, pattern in vhdl_regex_patterns.items():
         matches[key] = pattern.findall(vhdl)
@@ -725,16 +735,20 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
                     f_obj.vhdl_component_decl.append(component)
         elif construct == "component_inst":
             for item in found:
+                inst = item[0]
                 component = item[1]
+                deps_inst_dict_comp[inst] = component
                 if component not in f_obj.vhdl_component_deps:
                     log.debug(f'VHDL {loc} component {component}')
                     f_obj.vhdl_component_deps.append(component)
         elif construct == "direct_inst":
             for item in found:
+                inst = item[0]
                 l = item[1]
                 if l == LIB_DEFAULT:
                     l = lib
                 name = Name(l, item[2])
+                deps_inst_dict_direct[inst] = name
                 if name not in f_obj.entity_deps:
                     log.debug(f'VHDL {loc} requires {name}')
                     f_obj.entity_deps.append(name)
@@ -750,8 +764,32 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
                     log.debug(
                         f"\tpackage_use {name}"
                     )  # Extract library and package names`
+        elif construct == "c_coef_file":
+            for item in found:
+                # instance = item[0]
+                f_str = item[1]
+                log.debug(f'VHDL {loc} coefficent file {f_str}')
+                direct_dep_loc = folder/f_str
+                f_obj.direct_deps.append(FileObjDirect(direct_dep_loc,ver=ver))
+        elif construct == "is_du_within_envelope":
+            for item in found:
+                instance = item
+                log.debug(f'VHDL {loc} ecrypted instance {instance}')
+                deps_inst_to_remove.append(instance)
         else:
             raise Exception(f"error construct '{construct}'")
+
+    for inst_rm in deps_inst_to_remove:
+        log.debug(f'VHDL {loc} removeinb ecrypted instance {inst_rm}')
+        if inst_rm in deps_inst_dict_comp:
+            comp = deps_inst_dict_comp[inst_rm]
+            f_obj.vhdl_component_deps.remove(comp)
+        elif inst_rm in deps_inst_dict_direct:
+            name = deps_inst_dict_direct[inst_rm]
+            f_obj.entity_deps.remove(name)
+        else:
+            log.error(f'In encypted IP {loc} could not remove depency on instance {inst_rm}')
+
 
     if look is not None:
         f_obj.register_with_lookup(look)
@@ -880,7 +918,7 @@ def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -
     direct_deps = []
     folder = loc.parent
     def append_direct_dep(f_str):
-        f_loc = Path(folder)/f_str
+        f_loc = folder/f_str
         direct_deps.append(FileObjDirect(f_loc,ver=ver))
 
 
@@ -888,14 +926,19 @@ def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -
         comp_param = param['component_parameters']
         if 'Coefficient_File' in comp_param:
             coe_file = js_val(comp_param['Coefficient_File'])
-            log.info(f"Xilinx XCI {loc} has a direct coe file dependency {coe_file}")
+            log.info(f"Xilinx XCI {loc} has a direct Coefficient_File dependency {coe_file}")
             append_direct_dep(coe_file)
-    if 'model_parameters' in param:
-        model_param = param['model_parameters']
-        if 'C_COEF_FILE' in model_param:
-            mif_file = js_val(model_param['C_COEF_FILE'])
-            log.info(f"Xilinx XCI {loc} has a direct mif file dependency {mif_file}")
-            append_direct_dep(mif_file)
+        if 'Coe_File' in comp_param: #This statment has yet to be tested
+            coe_file = js_val(comp_param['Coe_File'])
+            log.info(f"Xilinx XCI {loc} has a direct Coe_File dependency {coe_file}")
+            append_direct_dep(coe_file)
+    # mif file only required for netlist simlation
+    # if 'model_parameters' in param:
+    #     model_param = param['model_parameters']
+    #     if 'C_COEF_FILE' in model_param:
+    #         mif_file = js_val(model_param['C_COEF_FILE'])
+    #         log.info(f"Xilinx XCI {loc} has a direct mif file dependency {mif_file}")
+    #         append_direct_dep(mif_file)
 
     f_obj = FileObjXXci(loc, ver, x_tool_version, x_device)
     f_obj.entities.append(name)
