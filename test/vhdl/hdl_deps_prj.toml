@@ -10,6 +10,7 @@ ignore_components = 'delComp2'
 
 'x_xci_files_glob@p' = ['./*.xci', './*/*.xci','!*delComp2.xci']
 
+'ext_files@p' = ['./ppp1.xci', './ppp2.xci']
 
 
 vhdl_package_skip_order = { xpm ='{VIV_LIB}/xpm_VCOMP.vhd'}

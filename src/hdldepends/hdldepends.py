@@ -48,7 +48,7 @@ class log:
 
 TOML_KEY_VER_SEP = '@'
 
-HDL_DEPENDS_VERSION_NUM = 7
+HDL_DEPENDS_VERSION_NUM = 8
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
@@ -213,6 +213,8 @@ class Name: # {{{
 class Lookup: #{{{
     def __init__(self):
         self.ignore_components : set[str] = set()
+        self.x_tool_version = ''
+        self.x_device = ''
 
     def get_vhdl_package(self, name: Name, f_obj_required_by : Optional["FileObjVhdl"]) -> Optional["FileObjVhdl"]:
         raise Exception("Virtual called")
@@ -234,6 +236,15 @@ class Lookup: #{{{
 
     def add_vhdl_package(self, name: Name, f_obj: "FileObjVhdl"):
         pass
+
+    def write_file_list(self, f_loc, f_type : Optional["FileObjType"]=None, lib : Optional[str] = None):
+        pass
+
+    def write_ext_file_list(self, f_loc : Path, tag : Optional[str] = None):
+        pass
+
+    def has_top_file(self) -> bool:
+        return False
 
 #}}}
 
@@ -266,7 +277,9 @@ class FileObj:
         self.f_type : Optional[FileObjType] = None
         self.level = None
         self.ver = ver
-        self.direct_deps : List[loc] = [] 
+        self.direct_deps : List = [] 
+        self.x_tool_version = ''
+        self.x_device = ''
 
     def requires_update(self):
         return self.get_modification_time_on_disk() != self.modification_time
@@ -1002,7 +1015,18 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) ->
 
 #}}}
 
+@dataclass 
+class FileLists:
+    vhdl    : Optional[List[Tuple[str, Path, str]]] = None
+    verilog : Optional[List[Tuple[Path, str]]] = None    
+    other   : Optional[List[Tuple[Path, str]]] = None    
+    x_bd    : Optional[List[Tuple[Path, str]]] = None    
+    x_xci   : Optional[List[Tuple[Path, str]]] = None    
+    tag_2_ext : Optional[dict[str, List[Path]]] = None    
+
+
 class LookupSingular(Lookup): # {{{
+
     TOML_KEYS_OTHER = [
         "pre_cmds",
         "ignore_libs",
@@ -1027,6 +1051,9 @@ class LookupSingular(Lookup): # {{{
         "x_xci_files",
         "x_xci_files_file",
         "x_xci_files_glob",
+        "ext_files",
+        "ext_files_file",
+        "ext_files_glob",
     ]
     VERSION = HDL_DEPENDS_VERSION_NUM
 
@@ -1051,8 +1078,17 @@ class LookupSingular(Lookup): # {{{
         self.other_file_list = None
         self.x_bd_file_list = None
         self.x_xci_file_list = None
-        self.x_tool_version = ''
-        self.x_device = ''
+        self.ext_file_list = None
+        self.tag_2_ext_file: dict[str, List[Path]] = {}
+
+    def get_tag_2_ext_file(self) -> dict[str, List[Path]]:
+        log.debug(f"LookupSingular.get_tag_2_ext_file called -> ret {self.tag_2_ext_file}")
+        return self.tag_2_ext_file
+
+    def get_ext_files_for_tag(self, tag:str) -> List[Path]:
+        if tag in self.tag_2_ext_file:
+            return self.tag_2_ext_file[tag]
+        return []
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
         log.info(f'Adding {key} to dict')
@@ -1079,11 +1115,13 @@ class LookupSingular(Lookup): # {{{
     @staticmethod
     def atempt_to_load_from_pickle(
             pickle_loc: Path, toml_loc: Path, top_lib : Optional[str]
-    ) -> Optional[object]:
+    ) -> Tuple[Optional[Lookup], FileLists]:
+        file_lists = FileLists()
+        
         assert toml_loc.is_file()
         if not pickle_loc.is_file():
             log.debug('will not load from pickle no file at {pickle_loc}')
-            return None, None, None, None, None
+            return None, file_lists
         log.info(f"atempting to load cache from {pickle_loc}")
         pickle_mod_time = get_file_modification_time(pickle_loc)
 
@@ -1092,71 +1130,79 @@ class LookupSingular(Lookup): # {{{
 
         if LookupSingular.VERSION != inst.version:
             log.info(f'hdldepends version { LookupSingular.VERSION} but pickle top_lib {inst.version} will not load from pickle')
-            return None, None, None, None, None
+            return None, file_lists
 
         toml_modification_time = get_file_modification_time(toml_loc)
         if toml_modification_time != inst.toml_modification_time:
             log.info(f"will not load from pickle as {toml_loc} out of date")
-            return None, None, None, None, None
+            return None, file_lists
 
         if top_lib != inst.top_lib:
             log.info(f'requested top_lib {top_lib} but pickle top_lib {inst.top_lib} will not load from pickle')
-            return None, None, None, None, None
+            return None, file_lists
 
         config = load_config(toml_loc)
 
-        vhdl_file_list = LookupSingular.get_vhdl_file_list_from_config_dict(
+        file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(
             config, toml_loc.parent, top_lib
         )
-        if vhdl_file_list != inst.vhdl_file_list:
+        if file_lists.vhdl != inst.vhdl_file_list:
             log.info(f'Will not load from pickle as vhdl_file_list has changed')
-            return None, vhdl_file_list, None, None, None
+            return None, file_lists
 
-        verilog_file_list = LookupSingular.get_verilog_file_list_from_config_dict(
+        file_lists.verilog = LookupSingular.get_verilog_file_list_from_config_dict(
             config, toml_loc.parent, top_lib
         )
-        if verilog_file_list != inst.verilog_file_list:
+        if file_lists.verilog != inst.verilog_file_list:
             log.info(f'Will not load from pickle as verilog_file_list has changed')
-            return None, vhdl_file_list, verilog_file_list, None, None
+            return None, file_lists
 
-        other_file_list = LookupSingular.get_other_file_list_from_config_dict(
+        file_lists.other = LookupSingular.get_other_file_list_from_config_dict(
             config, toml_loc.parent, top_lib=top_lib
         )
 
-        if other_file_list != inst.other_file_list:
+        if file_lists.other != inst.other_file_list:
             log.info(f'Will not load from pickle as other_file_list has changed')
-            return None, vhdl_file_list, verilog_file_list, other_file_list, None
+            return None, file_lists
 
-        x_bd_file_list = LookupSingular.get_x_bd_file_list_from_config_dict(
+        file_lists.x_bd = LookupSingular.get_x_bd_file_list_from_config_dict(
             config, toml_loc.parent, top_lib=top_lib
         )
 
-        if x_bd_file_list != inst.x_bd_file_list:
+        if file_lists.x_bd != inst.x_bd_file_list:
             log.info(f'Will not load from pickle as x_bd_file_list has changed')
-            return None, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list
+            return None, file_lists
         
-        x_xci_file_list = LookupSingular.get_x_xci_file_list_from_config_dict(
+        file_lists.x_xci = LookupSingular.get_x_xci_file_list_from_config_dict(
             config, toml_loc.parent, top_lib=top_lib
         )
 
-        if x_xci_file_list != inst.x_xci_file_list:
+        if file_lists.x_xci != inst.x_xci_file_list:
             log.info(f'Will not load from pickle as x_xci_file_list has changed')
-            return None, vhdl_file_list, verilog_file_list, other_file_list, x_xci_file_list
+            return None, file_lists
+
+        ext_file_list = LookupSingular.get_ext_file_list_from_config_dict(
+            config, toml_loc.parent, top_lib=top_lib
+        )
+        log.debug(f'New ext_file_list {ext_file_list}')
+        file_lists.tag_2_ext = LookupSingular.ext_file_list_2_dict(ext_file_list)
+
+
+        if file_lists.tag_2_ext != inst.tag_2_ext_file:
+            log.info(f'Will not load from pickle as ext_file_list has changed')
+            return None, file_lists
         
         log.info(f"loaded from {pickle_loc}, updating required files")
         any_changes = inst.check_for_src_files_updates()
         if any_changes:
             log.info(f"Updating pickle with the changes detected on disk")
             inst.save_to_pickle(pickle_loc)
-        return inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list, x_xci_file_list
+        return inst, file_lists
 
     def save_to_pickle(self, pickle_loc: Path):
         log.info(f"Caching to {pickle_loc}")
         with open(pickle_loc, "wb") as pickle_f:
             pickle.dump(self, pickle_f, protocol=pickle.HIGHEST_PROTOCOL)
-
-    def has_top_file(self) -> bool:
-        return False
 
     def check_for_src_files_updates(self) -> bool:
         """Returns True if there where any changes"""
@@ -1251,7 +1297,10 @@ class LookupSingular(Lookup): # {{{
         log.info(f"{key} = {l}")
         return set(l)
 
-    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str], vhdl_file_list=None, verilog_file_list=None, other_file_list=None, x_bd_file_list=None, x_xci_file_list=None, add_std_pkg_ignore=True):
+    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str], file_lists:Optional[FileLists], add_std_pkg_ignore=True):
+
+        if file_lists is None:
+            file_lists = FileLists()
 
         if 'top_lib' in config:
             self.top_lib = config['top_lib']
@@ -1271,30 +1320,37 @@ class LookupSingular(Lookup): # {{{
         if 'ignore_components' in config:
             self.ignore_components = make_set(config['ignore_components'])
 
-        if vhdl_file_list is None:
-            vhdl_file_list = LookupSingular.get_vhdl_file_list_from_config_dict(
+        if file_lists.vhdl is None:
+            file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(
                 config, work_dir, top_lib
             )
 
-        if verilog_file_list is None:
-            verilog_file_list = LookupSingular.get_verilog_file_list_from_config_dict(
+        if file_lists.verilog is None:
+            file_lists.verilog = LookupSingular.get_verilog_file_list_from_config_dict(
                 config, work_dir, top_lib=top_lib
             )
 
-        if other_file_list is None:
-            other_file_list = LookupSingular.get_other_file_list_from_config_dict(
+        if file_lists.other is None:
+            file_lists.other = LookupSingular.get_other_file_list_from_config_dict(
                 config, work_dir, top_lib=top_lib
             )
 
-        if x_bd_file_list is None:
-            x_bd_file_list = LookupSingular.get_x_bd_file_list_from_config_dict(
+        if file_lists.x_bd is None:
+            file_lists.x_bd = LookupSingular.get_x_bd_file_list_from_config_dict(
                 config, work_dir, top_lib=top_lib
             )
 
-        if x_xci_file_list is None:
-            x_xci_file_list = LookupSingular.get_x_xci_file_list_from_config_dict(
+        if file_lists.x_xci is None:
+            file_lists.x_xci = LookupSingular.get_x_xci_file_list_from_config_dict(
                 config, work_dir, top_lib=top_lib
             )
+
+        if file_lists.tag_2_ext is None:
+            ext_file_list = LookupSingular.get_ext_file_list_from_config_dict(
+                config, work_dir, top_lib=top_lib
+            )
+            log.debug(f'loaded ext_file_list {ext_file_list}')
+            file_lists.tag_2_ext = LookupSingular.ext_file_list_2_dict(ext_file_list)
 
         def add_file_to_list_skip_order(lib, loc_str):
             loc = path_abs_from_dir(work_dir, Path(loc_str))
@@ -1304,14 +1360,24 @@ class LookupSingular(Lookup): # {{{
             config, "vhdl_package_skip_order", with_ver=False, callback=add_file_to_list_skip_order, top_lib=top_lib
         )
 
-        self.register_vhdl_file_list(vhdl_file_list)
-        self.register_verilog_file_list(verilog_file_list)
-        self.register_other_file_list(other_file_list)
-        self.register_x_bd_file_list(x_bd_file_list)
-        self.register_x_xci_file_list(x_xci_file_list)
+        self.register_file_lists(file_lists)
+
+    def register_file_lists(self, file_lists:FileLists):
+        assert file_lists.vhdl is not None
+        assert file_lists.verilog is not None
+        assert file_lists.other is not None
+        assert file_lists.x_bd is not None
+        assert file_lists.x_xci is not None
+        assert file_lists.tag_2_ext is not None
+        self.register_vhdl_file_list(file_lists.vhdl)
+        self.register_verilog_file_list(file_lists.verilog)
+        self.register_other_file_list(file_lists.other)
+        self.register_x_bd_file_list(file_lists.x_bd)
+        self.register_x_xci_file_list(file_lists.x_xci)
+        self.register_ext_file_list(file_lists.tag_2_ext)
 
     @staticmethod
-    def get_common_file_list_from_config_dict(common_tag : str, config: dict, work_dir: Path, top_lib : Optional[str]):
+    def get_common_file_list_from_config_dict(common_tag : str, config: dict, work_dir: Path, top_lib : Optional[str]) -> List[Tuple[str, Path, str]]:
         common_file_list = []
 
         def add_file_to_list(lib, loc_str, ver):
@@ -1397,6 +1463,10 @@ class LookupSingular(Lookup): # {{{
     def get_x_xci_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
         return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('x_xci', config, work_dir, top_lib)
 
+    @staticmethod
+    def get_ext_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
+        return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('ext', config, work_dir, top_lib)
+
     def check_if_skip_from_order(self, loc:Path):
         return loc in self.files_2_skip_from_order
 
@@ -1429,6 +1499,19 @@ class LookupSingular(Lookup): # {{{
         self.verilog_file_list = verilog_file_list
         for loc, ver in verilog_file_list:
             parse_verilog_file(self, loc, ver=ver)
+
+    @staticmethod
+    def ext_file_list_2_dict(ext_file_list : List[Tuple[Path, str]]) -> dict[str, List[Path]]:
+        tag_2_ext_file = {}
+        for loc, ver in ext_file_list:
+            if ver not in tag_2_ext_file:
+                tag_2_ext_file[ver] = []
+            print(f'tag_2_ext_file[{ver}].append({loc})')
+            tag_2_ext_file[ver].append(loc)
+        return tag_2_ext_file
+
+    def register_ext_file_list(self, tag_2_ext_file : dict[str, List[Path]]):
+        self.tag_2_ext_file = tag_2_ext_file
 
     @staticmethod
     def create_from_config_dict(config: dict, work_dir: Path, **kwargs):
@@ -1527,6 +1610,22 @@ class LookupSingular(Lookup): # {{{
                     f.write(f'{f_obj.lib}\t{f_obj.loc}\n')
                 else:
                     f.write(str(f_obj.loc)+'\n')
+
+    def write_ext_file_list(self, f_loc : Path, tag : Optional[str] = None):
+        log.debug(f'Called write_ext_file_list(f_loc = {f_loc}, tag = {tag})')
+        log.debug(f'self {self}')
+        with open(f_loc, 'w') as f:
+            if tag is None:
+                tag_2_ext = self.get_tag_2_ext_file()
+                for tag, ext_l in tag_2_ext.items():
+                    for ext in ext_l:
+                        f.write(f'{tag}\t{ext}\n')
+            else:
+                ext_l = self.get_ext_files_for_tag(tag)
+                for ext in ext_l:
+                    f.write(f'{ext}\n')
+
+
 #}}}
 
 class LookupMulti(LookupSingular):  # {{{
@@ -1540,6 +1639,23 @@ class LookupMulti(LookupSingular):  # {{{
         super().__init__(allow_duplicates=True)
         self.f_obj_top = None
         self._compile_order = None
+
+    def get_tag_2_ext_file(self) -> dict[str, List[Path]]:
+        log.debug("LookupMulti.get_tag_2_ext_file called")
+        tag_2_ext = LookupSingular.get_tag_2_ext_file(self).copy()
+        for sub in self.look_subs:
+            for tag, f_l in sub.get_tag_2_ext_file().items():
+                if tag in tag_2_ext:
+                    tag_2_ext[tag].extend(f_l)
+                else:
+                    tag_2_ext[tag] = f_l
+        return tag_2_ext
+
+    def get_ext_files_for_tag(self, tag:str) -> List[Path]:
+        f_l = LookupSingular.get_ext_files_for_tag(self,tag)
+        for sub in self.look_subs:
+            f_l.extend( LookupSingular.get_ext_files_for_tag(sub,tag))
+        return f_l
 
     @staticmethod
     def create_from_config_dict(
@@ -1676,6 +1792,13 @@ class LookupPrj(LookupMulti): #{{{
         super().__init__(look_subs)
         self.f_obj_top = None
         self._compile_order = None
+
+    # def get_tag_2_ext_file(self):
+    #     return LookupMulti.get_tag_2_ext_file(self)
+    #
+    # def get_ext_files_for_tag(self, tag:str) -> List[Path]:
+    #     return LookupMulti.get_ext_files_for_tag(self,tag)
+
 
     def set_top_lib(self, top_lib : Optional[str] = None):
         self._compile_order = None
@@ -1913,16 +2036,37 @@ def create_lookup_from_toml(
             log.info(f'Running {cmd=}')
             subprocess.check_output(cmd, shell=True, cwd=work_dir)
 
-    vhdl_file_list = None
-    verilog_file_list = None
-    other_file_list = None
-    x_bd_file_list = None
-    x_xci_file_list = None 
+    file_lists = FileLists()
+    # vhdl_file_list = None
+    # verilog_file_list = None
+    # other_file_list = None
+    # x_bd_file_list = None
+    # x_xci_file_list = None 
+    # ext_file_list = None 
     if attemp_read_pickle:
-        inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list, x_xci_file_list = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
+        # inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list, x_xci_file_list = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
+        inst, file_lists = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
         if inst is not None:
-            inst.look_subs = look_subs
+            if hasattr(inst, 'look_subs'):
+                assert isinstance(inst, LookupMulti)
+                inst.look_subs = look_subs
+            elif len(look_subs) != 0:
+                log.warning(f"Config {toml_loc} has look_subs but pickle doesn't will not load from pickle")
+                inst = None
+        if inst is not None:
             return inst
+        # if file_lists.vhdl is not None:
+        #     vhdl_file_list = file_lists.vhdl
+        # if file_lists.verilog is not None:
+        #     verilog_file_list = file_lists.verilog
+        # if file_lists.other is not None:
+        #     other_file_list = file_lists.other
+        # if file_lists.x_bd is not None:
+        #     x_bd_file_list = file_lists.x_bd
+        # if file_lists.x_xci is not None:
+        #     x_xci_file_list = file_lists.x_xci
+        # if file_lists.ext is not None:
+        #     ext_file_list = file_lists.ext
 
     # picke_loc = LookupSingular.toml_loc_to_pickle_loc(toml_loc)
     config_keys = config.keys()
@@ -1940,7 +2084,7 @@ def create_lookup_from_toml(
 
         log.info(f"create LookupPrj from {toml_loc}")
         inst = LookupPrj.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list=x_bd_file_list, x_xci_file_list=x_xci_file_list
+            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, file_lists=file_lists
         )
 
 
@@ -1948,12 +2092,12 @@ def create_lookup_from_toml(
 
         log.info(f"create LookupMulti from {toml_loc}")
         inst = LookupMulti.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list = verilog_file_list, other_file_list = other_file_list, x_bd_file_list = x_bd_file_list, x_xci_file_list=x_xci_file_list
+            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, file_lists=file_lists
         )
 
     else :
         inst = LookupSingular.create_from_config_dict(
-            config, work_dir=work_dir, top_lib=top_lib, vhdl_file_list=vhdl_file_list, verilog_file_list=verilog_file_list, other_file_list = other_file_list, x_bd_file_list = x_bd_file_list, x_xci_file_list=x_xci_file_list
+            config, work_dir=work_dir, top_lib=top_lib, file_lists=file_lists
         )
 
     print(f'toml_loc {toml_loc}')
@@ -2023,6 +2167,12 @@ def hdldepends():
     parser.add_argument(
         "--file-list-vhdl-lib", nargs="+", type=extract_tuple_str, help="Expects '<lib>:<file>' where <file> is location to write the file list of VHDL library <lib>."
     )
+    parser.add_argument(
+        "--ext-file-list", type=str, help="external file list"
+    )
+    parser.add_argument(
+        "--ext-file-list-tag", nargs="+", type=extract_tuple_str, help="external file list for a given tag, Expects '<tag>:<file>'"
+    )
     parser.add_argument( "--x-tool-version", type=str, help="Xilinx tool version (used for choosing x_bd and x_xci files)")
     parser.add_argument( "--x-device", type=str, help="Xilinx device (used for choosing x_bd and x_xci files)")
     args = parser.parse_args()
@@ -2065,11 +2215,12 @@ def hdldepends():
                 )
             look = LookupPrj(look_subs)
             look.x_tool_version = x_tool_version
-            look.x_x_device = x_device
+            look.x_device = x_device
 
     assert look is not None
 
     if args.top_file_type:
+        assert isinstance(look, LookupPrj)
         look.set_top_file(Path(args.top_file))
 
     if args.top_file:
@@ -2100,6 +2251,13 @@ def hdldepends():
     if args.file_list_vhdl_lib is not None:
         for lib, f in args.file_list_vhdl_lib:
             look.write_file_list(Path(f), FileObjType.VHDL, lib)
+
+    if args.ext_file_list is not None:
+        look.write_ext_file_list(Path(args.ext_file_list))
+
+    if args.ext_file_list_tag is not None:
+        for tag, f in args.ext_file_list_tag:
+            look.write_ext_file_list(Path(f), tag)
 
     if args.compile_order is not None:
         assert(look.has_top_file())
