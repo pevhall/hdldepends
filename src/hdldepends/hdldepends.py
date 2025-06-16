@@ -246,6 +246,26 @@ class Lookup: #{{{
     def has_top_file(self) -> bool:
         return False
 
+    def set_x_tool_version(self, x_tool_version : str):
+        if len(self.x_tool_version) != 0:
+            if x_tool_version != self.x_tool_version:
+                log.warning(f'Lookup::set_x_tool_version({x_tool_version}) was previously {self.x_tool_version}')
+            else:
+                log.info(f'Lookup::set_x_tool_version({x_tool_version}) set to the same value twice')
+        else:
+            log.debug(f'Lookup::set_x_tool_version({x_tool_version})')
+        self.x_tool_version = x_tool_version
+
+    def set_x_device(self, x_device : str):
+        if len(self.x_device) != 0:
+            if x_device != self.x_device:
+                log.warning(f'Lookup::set_x_device({x_device}) was previously {self.x_device}')
+            else:
+                log.info(f'Lookup::set_x_device({x_device}) set to the same value twice')
+        else:
+            log.debug(f'Lookup::set_x_device({x_device})')
+        self.x_device = x_device
+
 #}}}
 
 # Constructs to handle files {{{
@@ -1059,6 +1079,7 @@ class LookupSingular(Lookup): # {{{
 
     def __init__(self, allow_duplicates: bool = True):
         log.debug('LookupSingular::__init__')
+        super().__init__()
         self.version = LookupSingular.VERSION
         self.allow_duplicates = allow_duplicates
         self.package_name_2_file_obj: dict[Name, FileObjLookup] = {}
@@ -1640,6 +1661,17 @@ class LookupMulti(LookupSingular):  # {{{
         self.f_obj_top = None
         self._compile_order = None
 
+    def set_x_tool_version(self, x_tool_version : str):
+        for sub in self.look_subs:
+            sub.set_x_tool_version(x_tool_version)     
+        Lookup.set_x_tool_version(self, x_tool_version)     
+
+    def set_x_device(self, x_device : str):
+        log.debug(f'LookupMulti::set_x_device({x_device})')
+        for sub in self.look_subs:
+            sub.set_x_device(x_device)     
+        Lookup.set_x_device(self, x_device)     
+
     def get_tag_2_ext_file(self) -> dict[str, List[Path]]:
         log.debug("LookupMulti.get_tag_2_ext_file called")
         tag_2_ext = LookupSingular.get_tag_2_ext_file(self).copy()
@@ -1783,7 +1815,7 @@ class LookupMulti(LookupSingular):  # {{{
 #}}}
 
 class LookupPrj(LookupMulti): #{{{
-    TOML_KEYS_OTHER = ["top_entity"]
+    TOML_KEYS_OTHER = ["top_entity", "x_tool_version", "x_device"]
     TOML_KEYS_OPT_VER = ["top_vhdl_file", "top_verilog_file", "top_x_bd_file"]
 
     def __init__(
@@ -1872,7 +1904,7 @@ class LookupPrj(LookupMulti): #{{{
         if "top_x_bd_file" in config_keys:
 
             l = []
-
+            
             def callback(lib: str, loc_str: str, ver):
                 loc = work_dir / loc_str
                 n = (lib, loc, ver)
@@ -1903,6 +1935,18 @@ class LookupPrj(LookupMulti): #{{{
             assert len(name_list) == 1
             name = name_list[0]
             look.set_top_entity(name, do_not_replace_top_file=True)
+
+        if "x_tool_version" in config:
+            x_tool_version = config['x_tool_version']
+            if not isinstance(x_tool_version,str):
+                raise RuntimeError(f"x_tool_version needs to be a string got {x_tool_version}")
+            look.set_x_tool_version(x_tool_version)
+
+        if "x_device" in config:
+            x_device = config['x_device']
+            if not isinstance(x_device,str):
+                raise RuntimeError(f"x_device needs to be a string got {x_device}")
+            look.set_x_device(x_device)
 
         return look
 
@@ -1957,7 +2001,7 @@ class LookupPrj(LookupMulti): #{{{
                         continue
                     f_order.write(f"{f_obj.lib} {f_obj.loc}\n")
                 else:
-                    f_order.write(f"{f_obj.file_stype_str} {f_obj.lib} {f_obj.loc}\n")
+                    f_order.write(f"{f_obj.file_type_str} {f_obj.lib} {f_obj.loc}\n")
 
 
     def write_compile_order_lib(self, compile_order_loc: Path, lib:str, f_type: Optional[FileObjType]=None):
@@ -2180,15 +2224,6 @@ def hdldepends():
     set_log_level_from_verbose(args)
 
 
-    
-    x_tool_version = args.x_tool_version
-    if x_tool_version is None:
-        x_tool_version = ''
-
-    x_device = args.x_device
-    if x_device is None:
-        x_device = ''
-
     work_dir=Path('.')
     top_lib = None
     if args.top_vhdl_lib:
@@ -2203,8 +2238,8 @@ def hdldepends():
             look = create_lookup_from_toml(Path(args.config_file[0]), work_dir=work_dir,
                 force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
             )
-            look.x_tool_version = x_tool_version
-            look.x_device = x_device
+            # look.x_tool_version = x_tool_version
+            # look.x_device = x_device
         else:
             look_subs = []
             for c_toml in look_subs:
@@ -2214,10 +2249,19 @@ def hdldepends():
                     )
                 )
             look = LookupPrj(look_subs)
-            look.x_tool_version = x_tool_version
-            look.x_device = x_device
+            # look.x_tool_version = x_tool_version
+            # look.x_device = x_device
 
     assert look is not None
+    
+    x_tool_version = args.x_tool_version
+    if x_tool_version is not None:
+        look.set_x_tool_version(x_tool_version) 
+
+    x_device = args.x_device
+    if x_device is not None:
+        look.set_x_device(x_device) 
+
 
     if args.top_file_type:
         assert isinstance(look, LookupPrj)

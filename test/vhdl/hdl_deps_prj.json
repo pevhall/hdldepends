@@ -5,6 +5,7 @@
   "top_vhdl_file" : "./del.vhd",
   "vhdl_files" : ["./del3.vhd", "./fir_compiler_0_sim_netlist.vhdl"],
 
+  "x_tool_version" : ["2024.2"]
   "package_file_skip_order" : { "xpm" :"xpm_VCOMP.vhd"}
     
 }

@@ -10,6 +10,7 @@ ignore_components = 'delComp2'
 
 'x_xci_files_glob@p' = ['./*.xci', './*/*.xci','!*delComp2.xci']
 
+'x_tool_version' = '2024.2'
 'ext_files@p' = ['./ppp1.xci', './ppp2.xci']
 
 
