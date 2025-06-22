@@ -9,8 +9,21 @@ import string
 import fnmatch
 import argparse
 import subprocess
-try: import tomllib
-except ModuleNotFoundError: import tomli as tomllib
+tomllib = None
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        pass
+
+yaml = None
+try:
+    import yaml
+except ModuleNotFoundError:
+        pass
+
 from pathlib import Path
 from enum import Enum, auto
 from dataclasses import dataclass
@@ -1035,6 +1048,7 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) ->
 
 #}}}
 
+ # {{{ class FileLists 
 @dataclass 
 class FileLists:
     vhdl    : Optional[List[Tuple[str, Path, str]]] = None
@@ -1043,7 +1057,7 @@ class FileLists:
     x_bd    : Optional[List[Tuple[Path, str]]] = None    
     x_xci   : Optional[List[Tuple[Path, str]]] = None    
     tag_2_ext : Optional[dict[str, List[Path]]] = None    
-
+# }}}
 
 class LookupSingular(Lookup): # {{{
 
@@ -2021,12 +2035,19 @@ class LookupPrj(LookupMulti): #{{{
 # Handling of configuration files {{{
 def load_config(toml_loc):
     is_json = toml_loc.suffix == '.json'
+    is_toml = toml_loc.suffix == '.toml' and tomllib is not None
+    is_yaml = toml_loc.suffix == '.yaml' and yaml is not None
+    if (sum([is_json, is_toml, is_yaml]) != 1) :
+        raise RuntimeError("Unexpected file format "+toml_loc.suffix)
+
     try:
         with open(toml_loc, "rb") as toml_f:
             if is_json:
                 return json.load(toml_f)
-            else:
+            if is_toml:
                 return tomllib.load(toml_f)
+            if is_yaml:
+                return yaml.safe_load(toml_f)
     except Exception as e:
         print(f'ERROR on file {toml_loc}')
         raise e
