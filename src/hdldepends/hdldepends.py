@@ -2030,6 +2030,47 @@ class LookupPrj(LookupMulti): #{{{
                     lines += 1
         if lines == 0:
             log.warning(f'not files found for libarary {lib}')
+
+    def create_project_compile_order(self, output_loc: Path):
+        """Write complete project compile order to JSON file including both compile order and external files.
+        Args:
+            output_loc: Path to the output JSON file
+        """
+        files_list = []
+        
+        # Add external files first (same logic as write_ext_file_list)
+        tag_2_ext = self.get_tag_2_ext_file()
+        for tag, ext_l in tag_2_ext.items():
+            for ext_file in ext_l:
+                # Determine file type from extension
+                file_ext = Path(ext_file).suffix.upper().lstrip('.')
+                if not file_ext:
+                    file_ext = "UNKNOWN"
+                
+                ext_file_entry = {
+                    "type": file_ext,
+                    "library": "work",  # Default library for external files
+                    "path": str(ext_file)
+                }
+                files_list.append(ext_file_entry)
+        
+        # Add compile order files (same logic as write_compile_order)
+        for f_obj in self.compile_order:
+            file_entry = {
+                "type": f_obj.file_type_str,
+                "library": f_obj.lib,  # Library isnt necessarily included for all file types
+                "path": str(f_obj.loc)
+            }
+            files_list.append(file_entry)
+        
+        # Create the final JSON structure
+        project_compile_order_json = {
+            "files": files_list
+        }
+        
+        # Write to JSON file
+        with open(output_loc, "w") as f:
+            json.dump(project_compile_order_json, f, indent=2)
 #}}}
 
 # Handling of configuration files {{{
@@ -2238,6 +2279,10 @@ def hdldepends():
     parser.add_argument(
         "--ext-file-list-tag", nargs="+", type=extract_tuple_str, help="external file list for a given tag, Expects '<tag>:<file>'"
     )
+    parser.add_argument(
+        "--create-project-compile-order", type=str, 
+        help="Create a complete project compile order JSON file including both compile order and external files"
+    )
     parser.add_argument( "--x-tool-version", type=str, help="Xilinx tool version (used for choosing x_bd and x_xci files)")
     parser.add_argument( "--x-device", type=str, help="Xilinx device (used for choosing x_bd and x_xci files)")
     args = parser.parse_args()
@@ -2346,6 +2391,12 @@ def hdldepends():
         assert isinstance(look, LookupPrj)
         for lib, f in args.compile_order_vhdl_lib:
             look.write_compile_order_lib(Path(f), lib, FileObjType.VHDL)
+
+    if args.create_project_compile_order is not None:
+        assert(look.has_top_file())
+        assert isinstance(look, LookupPrj)
+        look.create_project_compile_order(Path(args.create_project_compile_order))
+    
 
 if __name__ == "__main__":
     hdldepends()
