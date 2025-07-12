@@ -25,7 +25,7 @@ cat hdldepends.toml
 
 Now from a sub directory dump the VHDL work library compile order for a top level testbench
 ```
-hdldepends hdldepends.toml --top-file ../vhdl/example_tb.vhd --file-list-vhdl-lib work:compile_order.txt
+hdldepends hdldepends.toml --top-file ../vhdl/example_tb.vhd --compile-order-vhdl-lib work:compile_order.txt
 ```
 
 # Configuration file Keys/Options
