@@ -301,9 +301,9 @@ def string_to_FileObjType(s: str) -> FileObjType:
         raise ValueError(f"Unknown file type: {s}")
 
 class FileObj:
-    def __init__(self, loc: Path, ver : Optional[str]):
+    def __init__(self, loc: Path, ver : Optional[str]=None):
         self.loc = resolve_abs_path(loc)
-        self.lib = LIB_DEFAULT
+        self.lib = None #LIB_DEFAULT
         self.entities: List[Name] = []
         self.entity_deps: List[Name] = []
         self.modification_time =  self.get_modification_time_on_disk()
@@ -324,15 +324,19 @@ class FileObj:
         self.__dict__.update(f_obj.__dict__) #this didn't work
 
     @property
-    def _file_type_str_class(self) -> str:
+    def file_type_str(self) -> str:
         return "Unknown"
 
     @property
-    def file_type_str(self) -> str:
-        class_str = self._file_type_str_class
+    def file_type_str_w_ver_tag(self) -> str:
+        class_str = self.file_type_str
         if self.ver is None:
             return class_str
         return class_str + TOML_KEY_VER_SEP + self.ver
+
+    @property
+    def ver_tag(self) -> Optional[str]:
+        return self.ver
 
     @staticmethod
     def _add_to_f_deps(file_deps, f_obj):
@@ -412,7 +416,7 @@ class FileObjOther(FileObj):
         self.f_type : Optional[FileObjType] = FileObjType.OTHER
 
     @property
-    def _file_type_str_class(self) -> str:
+    def file_type_str(self) -> str:
         return "Other"
 
     def parse_file_again(self)->FileObj:
@@ -424,7 +428,7 @@ class FileObjDirect(FileObj):
         self.f_type : Optional[FileObjType] = FileObjType.DIRECT
 
     @property
-    def _file_type_str_class(self) -> str:
+    def file_type_str(self) -> str:
         return "Direct"
 
     def parse_file_again(self)->FileObj:
@@ -442,7 +446,7 @@ class FileObjXBd(FileObjX):
         self.f_type : Optional[FileObjType] = FileObjType.X_BD
 
     @property
-    def _file_type_str_class(self) -> str:
+    def file_type_str(self) -> str:
         return "X_BD"
 
     def parse_file_again(self)->FileObj:
@@ -456,7 +460,7 @@ class FileObjXXci(FileObjX):
         self.f_type : Optional[FileObjType] = FileObjType.X_XCI
 
     @property
-    def _file_type_str_class(self) -> str:
+    def file_type_str(self) -> str:
         return "X_XCI"
 
     def parse_file_again(self)->FileObj:
@@ -477,7 +481,7 @@ class FileObjVerilog(FileObj):
         self.f_type : Optional[FileObjType] = FileObjType.VERILOG
 
     @property
-    def _file_type_str_class(self) -> str:
+    def file_type_str(self) -> str:
         return "Verilog"
 
     def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
@@ -532,7 +536,7 @@ class FileObjVhdl(FileObj):
         self.f_type : Optional[FileObjType] = FileObjType.VHDL
 
     @property
-    def _file_type_str_class(self):
+    def file_type_str(self):
         return "VHDL"
 
     def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
@@ -1152,7 +1156,7 @@ class LookupSingular(Lookup): # {{{
             pickle_loc: Path, toml_loc: Path, top_lib : Optional[str]
     ) -> Tuple[Optional[Lookup], FileLists]:
         file_lists = FileLists()
-        
+
         assert toml_loc.is_file()
         if not pickle_loc.is_file():
             log.debug('will not load from pickle no file at {pickle_loc}')
@@ -1646,17 +1650,17 @@ class LookupSingular(Lookup): # {{{
                 else:
                     f.write(str(f_obj.loc)+'\n')
 
-    def write_ext_file_list(self, f_loc : Path, tag : Optional[str] = None):
-        log.debug(f'Called write_ext_file_list(f_loc = {f_loc}, tag = {tag})')
+    def write_ext_file_list(self, f_loc : Path, ver_tag : Optional[str] = None):
+        log.debug(f'Called write_ext_file_list(f_loc = {f_loc}, ver_tag = {ver_tag})')
         log.debug(f'self {self}')
         with open(f_loc, 'w') as f:
-            if tag is None:
+            if ver_tag is None:
                 tag_2_ext = self.get_tag_2_ext_file()
-                for tag, ext_l in tag_2_ext.items():
+                for ver_tag, ext_l in tag_2_ext.items():
                     for ext in ext_l:
-                        f.write(f'{tag}\t{ext}\n')
+                        f.write(f'{ver_tag}\t{ext}\n')
             else:
-                ext_l = self.get_ext_files_for_tag(tag)
+                ext_l = self.get_ext_files_for_tag(ver_tag)
                 for ext in ext_l:
                     f.write(f'{ext}\n')
 
@@ -1839,13 +1843,6 @@ class LookupPrj(LookupMulti): #{{{
         self.f_obj_top = None
         self._compile_order = None
 
-    # def get_tag_2_ext_file(self):
-    #     return LookupMulti.get_tag_2_ext_file(self)
-    #
-    # def get_ext_files_for_tag(self, tag:str) -> List[Path]:
-    #     return LookupMulti.get_ext_files_for_tag(self,tag)
-
-
     def set_top_lib(self, top_lib : Optional[str] = None):
         self._compile_order = None
         super().set_top_lib(top_lib)
@@ -2005,7 +2002,7 @@ class LookupPrj(LookupMulti): #{{{
         print("compile order:")
         for f_obj in self.compile_order:
             assert isinstance(f_obj.level, int)
-            print(f'  {f_obj.file_type_str+":":10} {"|---"*f_obj.level}{f_obj.lib}: {f_obj.loc}')
+            print(f'  {f_obj.file_type_str_w_ver_tag+":":10} {"|---"*f_obj.level}{f_obj.lib}: {f_obj.loc}')
 
     def write_compile_order(self, compile_order_loc: Path, f_type : Optional[FileObjType]=None):
         with open(compile_order_loc, "w") as f_order:
@@ -2015,7 +2012,7 @@ class LookupPrj(LookupMulti): #{{{
                         continue
                     f_order.write(f"{f_obj.lib} {f_obj.loc}\n")
                 else:
-                    f_order.write(f"{f_obj.file_type_str} {f_obj.lib} {f_obj.loc}\n")
+                    f_order.write(f"{f_obj.file_type_str_w_ver_tag} {f_obj.lib} {f_obj.loc}\n")
 
 
     def write_compile_order_lib(self, compile_order_loc: Path, lib:str, f_type: Optional[FileObjType]=None):
@@ -2031,43 +2028,50 @@ class LookupPrj(LookupMulti): #{{{
         if lines == 0:
             log.warning(f'not files found for libarary {lib}')
 
-    def create_project_compile_order(self, output_loc: Path):
+    def write_compile_order_json(self, output_loc: Path):
         """Write complete project compile order to JSON file including both compile order and external files.
         Args:
             output_loc: Path to the output JSON file
         """
         files_list = []
-        
+
         # Add external files first (same logic as write_ext_file_list)
         tag_2_ext = self.get_tag_2_ext_file()
-        for tag, ext_l in tag_2_ext.items():
+        for ver_tag, ext_l in tag_2_ext.items():
             for ext_file in ext_l:
                 # Determine file type from extension
                 file_ext = Path(ext_file).suffix.upper().lstrip('.')
                 if not file_ext:
                     file_ext = "UNKNOWN"
-                
+
                 ext_file_entry = {
-                    "type": file_ext,
-                    "library": "work",  # Default library for external files
+                    "type": "EXTERNAL",
+                    "file_ext": file_ext,
                     "path": str(ext_file)
                 }
+            if ver_tag is not None:
+                ext_file_entry["ver_tag"] = ver_tag
                 files_list.append(ext_file_entry)
-        
+
         # Add compile order files (same logic as write_compile_order)
         for f_obj in self.compile_order:
             file_entry = {
                 "type": f_obj.file_type_str,
-                "library": f_obj.lib,  # Library isnt necessarily included for all file types
                 "path": str(f_obj.loc)
             }
+            if f_obj is self.f_obj_top:
+                file_entry["is_top"] = True
+            if f_obj.lib is not None:
+                file_entry["library"] = f_obj.lib
+            if f_obj.ver_tag is not None:
+                ext_file_entry["ver_tag"] = f_obj.ver_tag
             files_list.append(file_entry)
-        
+
         # Create the final JSON structure
         project_compile_order_json = {
             "files": files_list
         }
-        
+
         # Write to JSON file
         with open(output_loc, "w") as f:
             json.dump(project_compile_order_json, f, indent=2)
@@ -2280,7 +2284,7 @@ def hdldepends():
         "--ext-file-list-tag", nargs="+", type=extract_tuple_str, help="external file list for a given tag, Expects '<tag>:<file>'"
     )
     parser.add_argument(
-        "--create-project-compile-order", type=str, 
+        "--compile-order-json", type=str, 
         help="Create a complete project compile order JSON file including both compile order and external files"
     )
     parser.add_argument( "--x-tool-version", type=str, help="Xilinx tool version (used for choosing x_bd and x_xci files)")
@@ -2319,7 +2323,7 @@ def hdldepends():
             # look.x_device = x_device
 
     assert look is not None
-    
+
     x_tool_version = args.x_tool_version
     if x_tool_version is not None:
         look.set_x_tool_version(x_tool_version) 
@@ -2342,7 +2346,7 @@ def hdldepends():
         assert isinstance(look, LookupPrj)
         lib = top_lib
         if lib is None:
-            lib = 'work'
+            lib = LIB
         name = Name(lib, args.top_entity)
         look.set_top_entity(name, do_not_replace_top_file=True)
 
@@ -2384,7 +2388,6 @@ def hdldepends():
                 look.write_compile_order(loc, f_type)
             else:
                 look.write_compile_order_lib(loc, LIB_DEFAULT, f_type)
-                
 
     if args.compile_order_vhdl_lib is not None:
         assert(look.has_top_file())
@@ -2392,11 +2395,10 @@ def hdldepends():
         for lib, f in args.compile_order_vhdl_lib:
             look.write_compile_order_lib(Path(f), lib, FileObjType.VHDL)
 
-    if args.create_project_compile_order is not None:
+    if args.compile_order_json is not None:
         assert(look.has_top_file())
         assert isinstance(look, LookupPrj)
-        look.create_project_compile_order(Path(args.create_project_compile_order))
-    
+        look.write_compile_order_json(Path(args.compile_order_json))
 
 if __name__ == "__main__":
     hdldepends()
