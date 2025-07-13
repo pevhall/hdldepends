@@ -724,7 +724,7 @@ vhdl_regex_patterns = {
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
-        r"(?<!:)\Wentity\s+(\w+)\s+is.*?end\s+(?:entity|\1)",
+        r"(?<!:)\Wentity\s+(\w+)\s+is.*?end\s*(?:entity|\1)?\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "vhdl_component_decl": re.compile(
