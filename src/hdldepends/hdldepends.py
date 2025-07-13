@@ -9,6 +9,8 @@ import string
 import fnmatch
 import argparse
 import subprocess
+import xml.etree.ElementTree as xml_et
+
 tomllib = None
 try:
     import tomllib
@@ -23,6 +25,7 @@ try:
     import yaml
 except ModuleNotFoundError:
         pass
+
 
 from pathlib import Path
 from enum import Enum, auto
@@ -943,10 +946,103 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str])
 #}}}
 
 #Parse X_XCI: Xilinx XCI IP File {{{
-def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjXXci:
-    log.info(f"parsing Xilinx XCI file {loc}:")
-    with open(loc, "rb") as json_f:
-        xci_dict = json.load(json_f)
+def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Optional[str]) -> Optional[FileObjXXci]:
+    
+
+    log.debug(f"called parse_x_xci_file_xml({loc=})")
+    try:
+        etree = xml_et.parse(xci_f) #raises xml_et.ParseError
+    except xml_et.ParseError as e:
+        return None
+
+    ns = {'spirit': 'http://www.spiritconsortium.org/XMLSchema/SPIRIT/1685-2009',
+          'xilinx': 'http://www.xilinx.com'
+    } 
+
+    root = etree.getroot()
+
+    def get_elem_text(xml_tag:str)->str:
+        xml_elem = root.find('.//spirit:'+xml_tag, ns)
+        assert xml_elem is not None
+        assert isinstance(xml_elem.text, str)
+        return xml_elem.text.lower()
+
+    def get_elem_text_arr(xml_tag:str)->List[str]:
+        xml_elem_arr = root.findall('.//spirit:'+xml_tag, ns)
+
+        text_arr = []
+        for xml_elem in xml_elem_arr:
+            assert isinstance(xml_elem.text, str) 
+            text_arr.append(xml_elem.text)
+        return text_arr
+
+
+    xml_lib_arr = get_elem_text_arr('library')
+    if(len(xml_lib_arr) != 1 or xml_lib_arr[0] != 'xci'):
+        raise RuntimeError("XML Parsing: Expected to find xci under library tag. This may not be an xci file")
+    module_name_arr = get_elem_text_arr('instanceName')
+    if len(module_name_arr) == 0:
+        raise RuntimeError("XML Parsing: could not find .//spirit:instance in xml file")
+    if len(module_name_arr) > 1:
+        raise RuntimeError("XML Parsing: hdl_depends expect ton only find one .//spirit:instance in xml file")
+    module_name = module_name_arr[0]
+
+    name = Name(LIB_DEFAULT, module_name)
+
+ 
+    x_dev = None
+    x_package = None
+    x_speed = None
+    x_temp = None
+    x_tool_version = None
+    for elem in root.findall('.//spirit:configurableElementValue', ns):
+        id = elem.attrib.get('{'+ns['spirit']+'}referenceId')
+        def val() -> str:
+            # result = elem.attrib.get('{'+ns['spirit']+'}valueSource')
+            result = elem.text
+            print(f'{id=}, {result=}')
+            assert isinstance(result, str)
+            return result
+        PP = "PROJECT_PARAM."
+        RP = "RUNTIME_PARAM."
+        if id == PP+'DEVICE':
+            x_dev = val()
+        if id == PP+'PACKAGE':
+            x_package = val()
+        if id == PP+'SPEEDGRADE':
+            x_speed = val()
+        if id == PP+'TEMPERATURE_GRADE':
+            x_temp = val()
+        if id == RP+'SWVERSION':
+            x_tool_version = val()
+
+    assert x_dev is not None
+    assert x_package is not None
+    assert x_speed is not None
+    assert x_temp is not None
+    assert x_tool_version is not None
+
+    x_device = f"{x_dev}-{x_package}{x_speed}-{x_temp}"
+    x_device = x_device.lower()
+    log.info(f"Xilinx XCI (xml) {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
+
+    direct_deps=[]
+
+    #NOTE coef file info is not currently begin extracted
+
+    f_obj = FileObjXXci(loc, ver, x_tool_version, x_device)
+    f_obj.entities.append(name)
+    f_obj.direct_deps = direct_deps
+    if look is not None:
+        f_obj.register_with_lookup(look)
+    return f_obj
+
+def parse_x_xci_file_json(look : Optional[Lookup], loc : Path, xci_f, ver : Optional[str]) -> Optional[FileObjXXci]:
+    try:
+        xci_dict = json.load(xci_f) #throws json.decoder.JSONDecodeError
+    except json.decoder.JSONDecodeError as e:
+        return None
+
     ip_inst =  xci_dict["ip_inst"]
     module_name = ip_inst["xci_name"]
     name = Name(LIB_DEFAULT, module_name)
@@ -963,7 +1059,7 @@ def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -
     run_param = param['runtime_parameters']
     x_tool_version = js_val(run_param['SWVERSION'])
 
-    log.info(f"Xilinx XCI {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
+    log.info(f"Xilinx XCI (json) {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
 
     direct_deps = []
     folder = loc.parent
@@ -982,13 +1078,6 @@ def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -
             coe_file = js_val(comp_param['Coe_File'])
             log.info(f"Xilinx XCI {loc} has a direct Coe_File dependency {coe_file}")
             append_direct_dep(coe_file)
-    # mif file only required for netlist simlation
-    # if 'model_parameters' in param:
-    #     model_param = param['model_parameters']
-    #     if 'C_COEF_FILE' in model_param:
-    #         mif_file = js_val(model_param['C_COEF_FILE'])
-    #         log.info(f"Xilinx XCI {loc} has a direct mif file dependency {mif_file}")
-    #         append_direct_dep(mif_file)
 
     f_obj = FileObjXXci(loc, ver, x_tool_version, x_device)
     f_obj.entities.append(name)
@@ -996,6 +1085,19 @@ def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -
     if look is not None:
         f_obj.register_with_lookup(look)
     return f_obj
+
+def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjXXci:
+    log.info(f"parsing Xilinx XCI file {loc}:")
+    with open(loc, "rb") as xci_f:
+        f_obj = parse_x_xci_file_json(look, loc, xci_f, ver)
+        if f_obj is not None:
+            return f_obj
+        xci_f.seek(0)
+        f_obj = parse_x_xci_file_xml(look, loc, xci_f, ver)
+        if f_obj is not None:
+            return f_obj
+
+    raise RuntimeError(f"Could not parse XCI as XML or JSON, {loc}")
 
     
 #}}}
