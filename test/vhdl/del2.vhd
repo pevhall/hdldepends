@@ -24,7 +24,7 @@ entity del2 is
     tedast_i : out  std_logic
 
   );
-end entity del;
+end entity del2;
 
 architecture sim of del2 is
   constant PATH : string := "";

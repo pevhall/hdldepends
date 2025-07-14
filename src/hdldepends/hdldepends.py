@@ -679,7 +679,6 @@ class ConflictFileObj:
             log.warning(f'File has correct version but wrong x_devcie {chosen.x_tool_version} but wanted x_device {x_device} please update it')
 
         return chosen
-            
 
 
 FileObjLookup = Union[ConflictFileObj, FileObj]
@@ -720,15 +719,15 @@ def vhdl_remove_protected_code(vhdl_code:str) -> str:
 
 vhdl_regex_patterns = {
     "package_decl": re.compile(
-        r"(?<!:)\Wpackage\s+(\w+)\s+is.*?end(?:\s+(?:package|\1)|)",
+        r"(?<!:)\Wpackage\s+(\w+)\s+is.*?end(?:\s+(?:package|\1)|;)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
-        r"(?<!:)\Wentity\s+(\w+)\s+is.*?end\s*(?:entity|\1)?\s*;",
+        r"(?<!:)\Wentity\s+(\w+)\s+is.*?end\s+(?:entity|\1|;)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "vhdl_component_decl": re.compile(
-        r"(?<!:)\Wcomponent\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1)",
+        r"(?<!:)\Wcomponent\s+(\w+)\s+(?:is|).*?end\s+(?:component|\1|;)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_inst": re.compile(
@@ -1852,6 +1851,20 @@ class LookupMulti(LookupSingular):  # {{{
         except KeyError:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is None:
+
+                if type_to_add_to_if_not_found is None:
+                    match loc.suffix:
+                        case ".vhd" | ".vhdl":
+                            type_to_add_to_if_not_found = FileObjType.VHDL
+                        case ".v":
+                            type_to_add_to_if_not_found = FileObjType.VERILOG
+                        case ".bd":
+                            type_to_add_to_if_not_found = FileObjType.X_BD
+                        case ".xci":
+                            type_to_add_to_if_not_found = FileObjType.X_XCI
+                        case _:
+                            pass
+
                 if type_to_add_to_if_not_found is not None:
                     ver = ver_to_add_to_if_not_found
                     if type_to_add_to_if_not_found is FileObjType.VHDL:
@@ -2072,8 +2085,8 @@ class LookupPrj(LookupMulti): #{{{
         if do_not_replace_top_file and self.f_obj_top is not None:
             f_obj = self.get_entity(name, f_obj_required_by=None)
             if f_obj != self.f_obj_top:
-                assert isinstance(f_obj, FileObj)
-                raise RuntimeError(f'cound not find entity {name} in file {f_obj.loc}')
+                assert isinstance(self.f_obj_top, FileObj)
+                raise RuntimeError(f'top entity specifed {name} but top file specifed {self.f_obj_top.loc}')
 
         else:
             f_obj = self.get_entity(name, f_obj_required_by=None)
@@ -2448,7 +2461,7 @@ def hdldepends():
         assert isinstance(look, LookupPrj)
         lib = top_lib
         if lib is None:
-            lib = LIB
+            lib = LIB_DEFAULT
         name = Name(lib, args.top_entity)
         look.set_top_entity(name, do_not_replace_top_file=True)
 
@@ -2504,5 +2517,4 @@ def hdldepends():
 
 if __name__ == "__main__":
     hdldepends()
-            
 # }}}
