@@ -64,7 +64,7 @@ class log:
 
 TOML_KEY_VER_SEP = '@'
 
-HDL_DEPENDS_VERSION_NUM = 8
+HDL_DEPENDS_VERSION_NUM = 9
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
@@ -2131,13 +2131,14 @@ class LookupPrj(LookupMulti): #{{{
 
 
     def write_compile_order_lib(self, compile_order_loc: Path, lib:str, f_type: Optional[FileObjType]=None):
+        log.debug(f'write_compile_order_lib({compile_order_loc=}, {lib=}, {f_type=}')
         lines = 0
         with open(compile_order_loc, "w") as f_order:
             for f_obj in self.compile_order:
                 if f_type is not None:
                     if f_obj.f_type != f_type:
                         continue
-                if lib == f_obj.lib:
+                if (f_obj.lib is None and lib == LIB_DEFAULT) or (f_obj.lib == lib):
                     f_order.write(f"{f_obj.loc}\n")
                     lines += 1
         if lines == 0:
