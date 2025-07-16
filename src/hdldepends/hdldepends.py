@@ -994,16 +994,24 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
     x_speed = None
     x_temp = None
     x_tool_version = None
+
     for elem in root.findall('.//spirit:configurableElementValue', ns):
-        id = elem.attrib.get('{'+ns['spirit']+'}referenceId')
-        def val() -> str:
-            # result = elem.attrib.get('{'+ns['spirit']+'}valueSource')
-            result = elem.text
-            print(f'{id=}, {result=}')
-            assert isinstance(result, str)
-            return result
         PP = "PROJECT_PARAM."
         RP = "RUNTIME_PARAM."
+
+        id = elem.attrib.get('{'+ns['spirit']+'}referenceId')
+        def val() -> str:
+            result = elem.text
+            if elem.text is None:
+                if id == PP+'TEMPERATURE_GRADE':
+                    log.warning(f'In Xilinx XCI (xml) {loc} got empty {PP}TEMPERATURE_GRADE assming temperate grade i\n' 
+                        f'\t(If this is incorect please make a report a bug with the XCI file, correct part number and vivado version)')
+                    result = 'i'
+
+            if not isinstance(result, str):
+                raise RuntimeError(f'In Xilinx XCI (xml) {loc} for {id=} we got {result=} expected a string')
+            assert isinstance(result, str)
+            return result
         if id == PP+'DEVICE':
             x_dev = val()
         if id == PP+'PACKAGE':
