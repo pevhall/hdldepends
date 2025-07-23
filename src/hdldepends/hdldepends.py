@@ -1257,7 +1257,7 @@ class LookupSingular(Lookup): # {{{
 
     @staticmethod
     def toml_loc_to_pickle_loc(toml_loc: Path) -> Path:
-        pickle_loc = toml_loc.with_suffix(".pickle")
+        pickle_loc = toml_loc.with_name('.' + toml_loc.stem + '.pickle')
         return pickle_loc
 
     @staticmethod
