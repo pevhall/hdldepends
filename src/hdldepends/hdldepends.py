@@ -651,7 +651,7 @@ class ConflictFileObj:
 
             f_obj_got_version = x_tool_version == f_obj.x_tool_version
             f_obj_matched = got_version and x_device == f_obj.x_device
-            
+
             if f_obj_matched and matched:
                 log.error(f'Got a x_tool_version and x_device match for both files {f_obj.loc} and {chosen.loc} cannot resolve this issue')
                 return None
@@ -674,9 +674,9 @@ class ConflictFileObj:
                 break
 
         if not got_version:
-            log.warning(f'File has x_tool_version {chosen.x_tool_version} but wanted x_tool_version {x_tool_version} please upgrade it')
+            log.warning(f'File has x_tool_version got {chosen.x_tool_version} but wanted {x_tool_version} please create an updated version')
         else:
-            log.warning(f'File has correct version but wrong x_devcie {chosen.x_tool_version} but wanted x_device {x_device} please update it')
+            log.warning(f'File has correct version but wrong x_device got {chosen.x_device} but wanted {x_device} please create an updated version')
 
         return chosen
 
