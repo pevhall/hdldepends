@@ -51,22 +51,15 @@ architecture sim of del is
   alias test_ovr is test_w_ovr(3);
   alias tessdft is test_w_ovr(3-1 downto 0);
 
-  --component delComp2 is
-  --  generic (
-  --    TEST : integer;
-  --    DSF : in  std_logic_vector(32-1 downto 0)
-  --  );
-  --  port (
-  --    clk_i : in  std_logic;
-  --    en_i : in  std_logic; --(((
-  --    testa_i : in  std_logic;
-  --    testdb_i : in  std_logic;
-  --    tesdt_i : in  std_logic;
-  --    sdf_i : in  std_logic_vector(32-1 downto 0);
-  --    tedast_i : out  std_logic
+  component dynamic_bram_loading_axi_controller_xci is
+   port (
+     clk_i : in  std_logic;
+     en_i : in  std_logic; --(((
+     src_i : in  std_logic;
+     dst_o : out  std_logic
 
-  --  );
-  --end component;
+   );
+  end component;
 
 COMPONENT axi_bram_ctrl_0
   PORT (
@@ -138,7 +131,16 @@ begin
   end if;
 end process;
 
-  i_del : delComp2
+  i_dynamic_bram_loading_axi_controller_xci: dynamic_bram_loading_axi_controller_xci
+   port map(
+     clk_i => clk_i,
+     en_i => en_i,
+     src_i => '0',
+     dst_o => open
+   );
+
+
+  i_del : delComp
   generic map (
     TEST     => TEST,
     sdf      => sdf,

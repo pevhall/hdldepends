@@ -64,7 +64,7 @@ class log:
 
 TOML_KEY_VER_SEP = '@'
 
-HDL_DEPENDS_VERSION_NUM = 9
+HDL_DEPENDS_VERSION_NUM = 10
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
@@ -137,7 +137,7 @@ def make_set(v) -> Set:
         return set(v)
 
 def read_text_file_contents(loc : Path):
-    
+
     encodings = ['utf-8', 'iso-8859-1','windows-1251', 'windows-1252' ,'gb2312' ,'utf-16']
     for enc in encodings:
         try:
@@ -145,7 +145,7 @@ def read_text_file_contents(loc : Path):
             with open(loc, encoding=enc) as f:
                 return f.read()
         except (UnicodeDecodeError, UnicodeError):
-            print(f'Trying next codec')
+            log.debug(f'Trying next codec')
     log.debug(f'Could not open {loc} with one of these {encodings}')
     raise RuntimeError(f'Could not decode file {loc}')
 
@@ -156,14 +156,14 @@ def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> L
     """
     Process a list of glob patterns sequentially, including exclusion patterns (starting with '!'),
     to generate a filtered list of file paths. Each pattern modifies the current file list.
-    
+
     Args:
         patterns (List[str]): list of glob patterns. Patterns starting with '!' are exclusions.
         base_path (str): Base directory to start glob searches from. Defaults to current directory.
-    
+
     Returns:
         List[str]: list of absolute file paths that match the inclusion patterns but not the exclusion patterns.
-    
+
     Example:
         patterns = [
             "*.py",          # Include all Python files
@@ -180,14 +180,14 @@ def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> L
         if pattern.startswith('!'):
             # Handle exclusion pattern - remove matching files from current set
             exclude_pattern = pattern[1:]  # Remove the '!' character
-            
+
             # Convert glob pattern to fnmatch pattern
             # Replace '**/' with '*/' for deep matching
             fnmatch_pattern = exclude_pattern.replace('**/', '*/')
-            
+
             # Filter out matching files from current set
             current_files = {
-                f for f in current_files 
+                f for f in current_files
                 if not fnmatch.fnmatch(f, fnmatch_pattern)
             }
         else:
@@ -313,7 +313,7 @@ class FileObj:
         self.f_type : Optional[FileObjType] = None
         self.level = None
         self.ver = ver
-        self.direct_deps : List = [] 
+        self.direct_deps : List = []
         self.x_tool_version = ''
         self.x_device = ''
 
@@ -385,7 +385,7 @@ class FileObj:
         for f_obj in self.get_file_deps(look):
             if f_obj not in files_passed:
                 order += f_obj._get_compile_order(look, files_passed, components_missed = components_missed, level = level + 1)
-        
+
         for ddep in self.direct_deps:
             ddep.level = level+1
             order.append(ddep)
@@ -525,7 +525,7 @@ class FileObjVerilog(FileObj):
             return result
 
         return FileObj.equivalent(self, other)
-        
+
 
 class FileObjVhdl(FileObj):
 
@@ -601,10 +601,10 @@ class FileObjVhdl(FileObj):
 
         result = (self.vhdl_packages == other.vhdl_packages
             and self.vhdl_package_deps == other.vhdl_package_deps)
-           
+
         if not result:
             return result
-        
+
         return FileObj.equivalent(self, other)
 
 class ConflictFileObj:
@@ -689,10 +689,10 @@ FileObjLookup = Union[ConflictFileObj, FileObj]
 def vhdl_remove_comments(vhdl_code: str) -> str:
     # Remove single-line comments
     code_without_single_comments = re.sub(r'--.*$', '', vhdl_code, flags=re.MULTILINE)
-    
+
     # Remove multi-line comments
     code_without_comments = re.sub(r'/\*.*?\*/', '', code_without_single_comments, flags=re.DOTALL)
-    
+
     return code_without_comments
 
 def vhdl_remove_protected_code(vhdl_code:str) -> str:
@@ -719,7 +719,7 @@ def vhdl_remove_protected_code(vhdl_code:str) -> str:
 
 vhdl_regex_patterns = {
     "package_decl": re.compile(
-        r"(?<!:)\Wpackage\s+(\w+)\s+is.*?end(?:\s+(?:package|\1)|;)",
+        r"(?<!:)\bpackage\s+(\w+)\s+is.*?end(?:\s+(?:package|\1)|;)",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "entity_decl": re.compile(
@@ -739,7 +739,7 @@ vhdl_regex_patterns = {
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "package_use": re.compile(
-        r"\Wuse\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
+        r"\buse\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
     ),
     "c_coef_file": re.compile(
         r'_?attribute\s+C_COEF_FILE?\s+of\s+(\w+)\s*:\s*label\s+is\s+"([^"]+)"\s*;', re.IGNORECASE
@@ -761,7 +761,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
     folder = loc.parent
 
     deps_inst_dict_comp = {}
-    deps_inst_dict_direct = {} 
+    deps_inst_dict_direct = {}
     deps_inst_to_remove = []
     matches = {}
     for key, pattern in vhdl_regex_patterns.items():
@@ -855,32 +855,211 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
 def verilog_remove_comments(verilog_code):
     # Remove single-line comments
     code_without_single_comments = re.sub(r'//.*$', '', verilog_code, flags=re.MULTILINE)
-    
+
     # Remove multi-line comments
     code_without_comments = re.sub(r'/\*.*?\*/', '', code_without_single_comments, flags=re.DOTALL)
-    
+
     return code_without_comments
 
-# Function to extract module instantiations from Verilog code
-def verilog_extract_module_instantiations(verilog_code):
-# Regular expression to find module instantiations and extract the module name
-# This matches both named and unnamed instantiations
-    # module_instantiation_regex = r'(\w+)\s+(?:#\s*\([^)]*\)\s+)?(?:(\w+)\s*)?\(' #)
-    module_instantiation_regex = r'(\w+)\s+(?:#\s*\([^)]*\)\s+)?(\w+)(?:\s+#\s*\([^)]*\))?\s*\(' #)
-    matches = re.finditer(module_instantiation_regex, verilog_code)
-    instantiations = []
-    
-    for match in matches:
-        module_name = match.group(1)
-        instance_name = match.group(2) if match.group(2) else "unnamed"
+# Function to extract module instantiations from Verilog cod
 
-        VERLOG_RESERVED_WORDS = [ "always", "always_comb", "always_ff", "always_latch", "assign", "begin", "case", "else", "end", "endcase", "endfunction", "endmodule", "endprimitive", "endtable", "endtask", "enum", "for", "forever", "function", "if", "initial", "input", "int", "localparam", "logic", "module", "negedge", "output", "parameter", "posedge", "primitive", "real", "reg", "repeat", "table", "task", "time", "timescale", "typedef", "while", "wire",]
-                
-        # Filter out Verilog keywords and module declarations that might be mistaken for instantiations
-        if module_name not in VERLOG_RESERVED_WORDS and instance_name not in VERLOG_RESERVED_WORDS:
-            instantiations.append(module_name)
-            instantiations.append(module_name)
-    
+
+
+# def verilog_extract_module_instantiations(verilog_code):
+# # Regular expression to find module instantiations and extract the module name
+# # This matches both named and unnamed instantiations
+#     # module_instantiation_regex = r'(\w+)\s+(?:#\s*\([^)]*\)\s+)?(?:(\w+)\s*)?\(' #)
+#     # module_instantiation_regex = r'(\w+)\s+(?:#\s*\([^)]*\)\s+)?(\w+)(?:\s+#\s*\([^)]*\))?\s*\(' #)
+#     module_instantiation_regex = r'''
+#             (?:^|[;\s}])                    # Start of line or after ; or } or whitespace
+#             \s*                             # Optional whitespace
+#             ([a-zA-Z_]\w*)                  # Module name (capture group 1)
+#             \s*                             # Optional whitespace
+#             (?:\#\s*\(                      # Optional parameter list start
+#                 (?:[^()]*                   # Non-parentheses characters
+#                 |\([^()]*\))*               # Or balanced single-level parentheses
+#             \)\s*)?                         # End of optional parameter list
+#             (?:([a-zA-Z_]\w*)\s*)?          # Optional instance name (capture group 2)
+#             \(                              # Start of port list
+#             (?:[^();]*                      # Non-parentheses/semicolon characters
+#             |\([^()]*\))*                   # Or balanced single-level parentheses
+#             \)\s*;                          # End of port list and semicolon
+#         '''
+#     matches = re.finditer(module_instantiation_regex, verilog_code,  re.VERBOSE | re.MULTILINE)
+#     instantiations = []
+#
+#     for match in matches:
+#         print(f'{match=}')
+#         module_name = match.group(1).strip()
+#         instance_name = match.group(2).strip() if match.group(2) else "unnamed"
+#
+#         VERLOG_RESERVED_WORDS = {
+#             'module', 'endmodule', 'input', 'output', 'inout', 'wire', 'reg',
+#             'always', 'initial', 'begin', 'end', 'if', 'else', 'case', 'endcase',
+#             'for', 'while', 'repeat', 'forever', 'assign', 'parameter', 'localparam',
+#             'generate', 'endgenerate', 'genvar', 'function', 'endfunction',
+#             'task', 'endtask', 'integer', 'real', 'time', 'realtime',
+#             'supply0', 'supply1', 'tri', 'triand', 'trior', 'trireg', 'uwire',
+#             'wand', 'wor', 'logic', 'bit', 'byte', 'shortint', 'int', 'longint',
+#             'shortreal', 'string', 'chandle', 'event', 'packed', 'signed',
+#             'unsigned', 'struct', 'union', 'enum', 'typedef', 'interface',
+#             'endinterface', 'modport', 'clocking', 'endclocking', 'property',
+#             'endproperty', 'sequence', 'endsequence', 'program', 'endprogram',
+#             'class', 'endclass', 'package', 'endpackage', 'import', 'export',
+#             'extends', 'implements', 'super', 'this', 'local', 'protected',
+#             'static', 'automatic', 'rand', 'randc', 'constraint', 'solve',
+#             'before', 'inside', 'dist', 'covergroup', 'endgroup', 'coverpoint',
+#             'cross', 'bins', 'binsof', 'illegal_bins', 'ignore_bins', 'wildcard',
+#             'with', 'matches', 'tagged', 'priority', 'unique', 'unique0',
+#             'final', 'alias', 'always_comb', 'always_ff', 'always_latch'
+#         }
+#
+#         # Filter out Verilog keywords and module declarations that might be mistaken for instantiations
+#         if module_name not in VERLOG_RESERVED_WORDS and instance_name not in VERLOG_RESERVED_WORDS:
+#             instantiations.append(module_name)
+#             instantiations.append(module_name)
+#         print('test match')
+
+    return instantiations
+
+def verilog_extract_module_instantiations(verilog_code):
+    """
+    Extract all module instantiations from Verilog/SystemVerilog code
+
+    Args:
+        verilog_code: String containing Verilog/SystemVerilog source code
+
+    Returns:
+        List of ModuleInstantiation objects
+    """
+    VERILOG_KEYWORDS = {
+        'module', 'endmodule', 'input', 'output', 'inout', 'wire', 'reg',
+        'always', 'initial', 'begin', 'end', 'if', 'else', 'case', 'endcase',
+        'for', 'while', 'repeat', 'forever', 'assign', 'parameter', 'localparam',
+        'generate', 'endgenerate', 'genvar', 'function', 'endfunction',
+        'task', 'endtask', 'integer', 'real', 'time', 'realtime',
+        'supply0', 'supply1', 'tri', 'triand', 'trior', 'trireg', 'uwire',
+        'wand', 'wor', 'logic', 'bit', 'byte', 'shortint', 'int', 'longint',
+        'shortreal', 'string', 'chandle', 'event', 'packed', 'signed',
+        'unsigned', 'struct', 'union', 'enum', 'typedef', 'interface',
+        'endinterface', 'modport', 'clocking', 'endclocking', 'property',
+        'endproperty', 'sequence', 'endsequence', 'program', 'endprogram',
+        'class', 'endclass', 'package', 'endpackage', 'import', 'export',
+        'extends', 'implements', 'super', 'this', 'local', 'protected',
+        'static', 'automatic', 'rand', 'randc', 'constraint', 'solve',
+        'before', 'inside', 'dist', 'covergroup', 'endgroup', 'coverpoint',
+        'cross', 'bins', 'binsof', 'illegal_bins', 'ignore_bins', 'wildcard',
+        'with', 'matches', 'tagged', 'priority', 'unique', 'unique0',
+        'final', 'alias', 'always_comb', 'always_ff', 'always_latch'
+    }
+    instantiations = []
+
+    # Simple tokenization - split by whitespace and common delimiters
+    # but keep track of positions for line numbers
+    tokens = []
+    current_token = ""
+    line_num = 1
+
+    for i, char in enumerate(verilog_code):
+        if char == '\n':
+            if current_token.strip():
+                tokens.append((current_token.strip(), line_num))
+            current_token = ""
+            line_num += 1
+        elif char in ' \t\r':
+            if current_token.strip():
+                tokens.append((current_token.strip(), line_num))
+            current_token = ""
+        elif char in '();#,=':
+            if current_token.strip():
+                tokens.append((current_token.strip(), line_num))
+            tokens.append((char, line_num))
+            current_token = ""
+        else:
+            current_token += char
+
+    if current_token.strip():
+        tokens.append((current_token.strip(), line_num))
+
+    # Parse tokens to find module instantiations
+    i = 0
+    while i < len(tokens):
+        token, _ = tokens[i]
+
+        # Check if this could be a module name (identifier not a keyword)
+        if (re.match(r'^[a-zA-Z_]\w*$', token) and
+            token.lower() not in VERILOG_KEYWORDS):
+
+            # Look ahead to see if this looks like a module instantiation
+            j = i + 1
+
+            # Skip whitespace tokens (shouldn't happen with our tokenizer, but just in case)
+            while j < len(tokens) and tokens[j][0] in [' ', '\t', '\n', '\r']:
+                j += 1
+
+            if j >= len(tokens):
+                break
+
+            # Check for parameter list #(...)
+            has_params = False
+            if tokens[j][0] == '#':
+                has_params = True
+                j += 1
+                if j < len(tokens) and tokens[j][0] == '(':
+                    # Find matching closing paren for parameters
+                    paren_count = 1
+                    j += 1
+                    while j < len(tokens) and paren_count > 0:
+                        if tokens[j][0] == '(':
+                            paren_count += 1
+                        elif tokens[j][0] == ')':
+                            paren_count -= 1
+                        j += 1
+
+            if j >= len(tokens):
+                break
+
+            # Now look for instance name or port list
+            instance_name = None
+
+            # Check if next token is an identifier (instance name)
+            if (j < len(tokens) and
+                re.match(r'^[a-zA-Z_]\w*$', tokens[j][0]) and
+                tokens[j][0].lower() not in VERILOG_KEYWORDS):
+                instance_name = tokens[j][0]
+                j += 1
+
+            # Look for port list starting with '('
+            if j < len(tokens) and tokens[j][0] == '(':
+                # Find matching closing paren for port list
+                paren_count = 1
+                port_start = j
+                j += 1
+                while j < len(tokens) and paren_count > 0:
+                    if tokens[j][0] == '(':
+                        paren_count += 1
+                    elif tokens[j][0] == ')':
+                        paren_count -= 1
+                    j += 1
+
+                # Look for semicolon after port list
+                if j < len(tokens) and tokens[j][0] == ';':
+                    # This looks like a valid module instantiation!
+                    module_name = token
+
+                    # Extract full text (simplified for now)
+                    full_text = f"{module_name}"
+                    if has_params:
+                        full_text += " #(...)"
+                    if instance_name:
+                        full_text += f" {instance_name}"
+                    full_text += "(...);"
+
+                    # instantiations.append((module_name, instance_name))
+                    instantiations.append(module_name)
+
+        i += 1
+
     return instantiations
 
 # Function to extract include files from Verilog code
@@ -888,11 +1067,11 @@ def verilog_extract_include_files(verilog_code):
     include_regex = r'`include\s+(["<])([^">]+)[">]'
     matches = re.finditer(include_regex, verilog_code)
     includes = []
-    for match in matches:                                           
+    for match in matches:
         inc_is_sys = match.group(1) == '<'
         inc_name = [match.group(2) for match in matches]
         includes.append((inc_name, inc_is_sys))
-        
+
     return includes
 
 
@@ -900,27 +1079,27 @@ def verilog_extract_module_declarations(verilog_code):
     module_declaration_regex = r'module\s+(\w+)\s*(?:\#\s*\([^)]*\))?\s*\(' #)
     matches = re.finditer(module_declaration_regex, verilog_code)
     declarations = []
-    
+
     for match in matches:
         module_name = match.group(1)
         declarations.append(module_name)
-    
+
     return declarations
 
 
 def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjVerilog:
     log.info(f"passing Verilog file {loc}:")
 
-    if loc.suffix != '.v':
-        log.warning(f'unexpected verilog extension on {loc} expected .v')
+    if loc.suffix != '.v' and loc.suffix != '.sv':
+        log.warning(f'unexpected verilog extension on {loc} expected .v or .sv')
 
     # with open(loc, "r", encoding=detect_encoding(loc)) as file:
     #     verilog_code = file.read()
     verilog_code = read_text_file_contents(loc)
-    
+
     clean_code = verilog_remove_comments(verilog_code)
 
-    
+
     f_obj = FileObjVerilog(loc, ver)
     for inc_name, inc_is_sys in verilog_extract_include_files(clean_code):
         vinc = f_obj.VInc(inc_name, inc_is_sys)
@@ -937,7 +1116,7 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str])
         if name not in f_obj.entity_deps:
             log.debug(f'Verilog {loc} requires {module_name}')
             f_obj.entity_deps.append(name)
-    
+
 
     if look is not None:
         f_obj.register_with_lookup(look)
@@ -946,7 +1125,7 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str])
 
 #Parse X_XCI: Xilinx XCI IP File {{{
 def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Optional[str]) -> Optional[FileObjXXci]:
-    
+
 
     log.debug(f"called parse_x_xci_file_xml({loc=})")
     try:
@@ -956,7 +1135,7 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
 
     ns = {'spirit': 'http://www.spiritconsortium.org/XMLSchema/SPIRIT/1685-2009',
           'xilinx': 'http://www.xilinx.com'
-    } 
+    }
 
     root = etree.getroot()
 
@@ -971,7 +1150,7 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
 
         text_arr = []
         for xml_elem in xml_elem_arr:
-            assert isinstance(xml_elem.text, str) 
+            assert isinstance(xml_elem.text, str)
             text_arr.append(xml_elem.text)
         return text_arr
 
@@ -988,7 +1167,7 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
 
     name = Name(LIB_DEFAULT, module_name)
 
- 
+
     x_dev = None
     x_package = None
     x_speed = None
@@ -1004,7 +1183,7 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
             result = elem.text
             if elem.text is None:
                 if id == PP+'TEMPERATURE_GRADE':
-                    log.warning(f'In Xilinx XCI (xml) {loc} got empty {PP}TEMPERATURE_GRADE assming temperate grade i\n' 
+                    log.warning(f'In Xilinx XCI (xml) {loc} got empty {PP}TEMPERATURE_GRADE assming temperate grade i\n'
                         f'\t(If this is incorect please make a report a bug with the XCI file, correct part number and vivado version)')
                     result = 'i'
 
@@ -1106,7 +1285,7 @@ def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -
 
     raise RuntimeError(f"Could not parse XCI as XML or JSON, {loc}")
 
-    
+
 #}}}
 
 #Parse X_BD: Xilinx Block Digarm File {{{
@@ -1123,7 +1302,7 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) ->
     f_obj = FileObjXBd(loc, ver, x_tool_version, x_device)
     name = Name(LIB_DEFAULT, module_name)
     f_obj.entities.append(name)
-    
+
     if 'components' in design_dict:
         for component_name, component in design_dict["components"].items():
             if 'reference_info' in component:
@@ -1152,7 +1331,7 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) ->
                 name = Name(LIB_DEFAULT, ref_name)
                 log.info(f'X_BD {loc} requsted BD instance {component_name} is {ref_name}')
                 f_obj.entity_deps.append(name)
-                
+
     if look is not None:
         f_obj.register_with_lookup(look)
     return f_obj
@@ -1161,15 +1340,15 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) ->
 
 #}}}
 
- # {{{ class FileLists 
-@dataclass 
+ # {{{ class FileLists
+@dataclass
 class FileLists:
     vhdl    : Optional[List[Tuple[str, Path, str]]] = None
-    verilog : Optional[List[Tuple[Path, str]]] = None    
-    other   : Optional[List[Tuple[Path, str]]] = None    
-    x_bd    : Optional[List[Tuple[Path, str]]] = None    
-    x_xci   : Optional[List[Tuple[Path, str]]] = None    
-    tag_2_ext : Optional[dict[str, List[Path]]] = None    
+    verilog : Optional[List[Tuple[Path, str]]] = None
+    other   : Optional[List[Tuple[Path, str]]] = None
+    x_bd    : Optional[List[Tuple[Path, str]]] = None
+    x_xci   : Optional[List[Tuple[Path, str]]] = None
+    tag_2_ext : Optional[dict[str, List[Path]]] = None
 # }}}
 
 class LookupSingular(Lookup): # {{{
@@ -1320,7 +1499,7 @@ class LookupSingular(Lookup): # {{{
         if file_lists.x_bd != inst.x_bd_file_list:
             log.info(f'Will not load from pickle as x_bd_file_list has changed')
             return None, file_lists
-        
+
         file_lists.x_xci = LookupSingular.get_x_xci_file_list_from_config_dict(
             config, toml_loc.parent, top_lib=top_lib
         )
@@ -1339,7 +1518,7 @@ class LookupSingular(Lookup): # {{{
         if file_lists.tag_2_ext != inst.tag_2_ext_file:
             log.info(f'Will not load from pickle as ext_file_list has changed')
             return None, file_lists
-        
+
         log.info(f"loaded from {pickle_loc}, updating required files")
         any_changes = inst.check_for_src_files_updates()
         if any_changes:
@@ -1357,7 +1536,7 @@ class LookupSingular(Lookup): # {{{
         compile_order_out_of_date = False
         any_changes = False
         for _, f_obj_l in self.loc_2_file_obj.items():
-               
+
             if isinstance(f_obj_l, ConflictFileObj):
                 # temp = ','.join([str(cf_obj.loc) for cf_obj in f_obj.get_f_objs()])
                 # log.warning("Conflicted file objects: "+temp) #HERE
@@ -1382,7 +1561,7 @@ class LookupSingular(Lookup): # {{{
             for _, f_obj in self.loc_2_file_obj.items():
                 assert isinstance(f_obj, FileObj)
                 f_obj.register_with_lookup(self, skip_loc=True)
-        
+
         return any_changes
 
     @staticmethod
@@ -1578,7 +1757,7 @@ class LookupSingular(Lookup): # {{{
                 log.error(f'Files types not VHDL must have default library {LIB_DEFAULT} got library {lib} on file {loc} (ver {ver})')
 
         return [(loc, ver) for _, loc, ver in common_file_list]
-    
+
     @staticmethod
     def get_vhdl_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
         log.debug(f'called get_vhdl_file_list_from_config_dict( top_lib={top_lib} )')
@@ -1591,7 +1770,7 @@ class LookupSingular(Lookup): # {{{
         LookupSingular._process_config_opt_lib(
             config, "vhdl_package_skip_order", with_ver=True, callback=add_file_to_list_skip_order, top_lib=top_lib
         )
-        
+
         return vhdl_file_list
 
     @staticmethod
@@ -1621,7 +1800,7 @@ class LookupSingular(Lookup): # {{{
     def register_other_file_list(self, other_file_list : List[Tuple[Path, str]]):
         self.other_file_list = other_file_list
         for loc, ver in other_file_list:
-            
+
             f_obj = FileObjOther(loc=loc, ver=ver)
             entity_name = Name(LIB_DEFAULT, loc.stem)
             f_obj.entities.append(entity_name)
@@ -1654,7 +1833,6 @@ class LookupSingular(Lookup): # {{{
         for loc, ver in ext_file_list:
             if ver not in tag_2_ext_file:
                 tag_2_ext_file[ver] = []
-            print(f'tag_2_ext_file[{ver}].append({loc})')
             tag_2_ext_file[ver].append(loc)
         return tag_2_ext_file
 
@@ -1790,14 +1968,14 @@ class LookupMulti(LookupSingular):  # {{{
 
     def set_x_tool_version(self, x_tool_version : str):
         for sub in self.look_subs:
-            sub.set_x_tool_version(x_tool_version)     
-        Lookup.set_x_tool_version(self, x_tool_version)     
+            sub.set_x_tool_version(x_tool_version)
+        Lookup.set_x_tool_version(self, x_tool_version)
 
     def set_x_device(self, x_device : str):
         log.debug(f'LookupMulti::set_x_device({x_device})')
         for sub in self.look_subs:
-            sub.set_x_device(x_device)     
-        Lookup.set_x_device(self, x_device)     
+            sub.set_x_device(x_device)
+        Lookup.set_x_device(self, x_device)
 
     def get_tag_2_ext_file(self) -> dict[str, List[Path]]:
         log.debug("LookupMulti.get_tag_2_ext_file called")
@@ -1949,7 +2127,7 @@ class LookupMulti(LookupSingular):  # {{{
 
     def get_file_list(self, lib:Optional[str]=None):
         file_list = LookupSingular.get_file_list(self, lib=lib)
-        
+
         for s in self.look_subs:
             file_list += s.get_file_list(lib=lib)
         return file_list
@@ -2006,11 +2184,11 @@ class LookupPrj(LookupMulti): #{{{
             LookupSingular._process_config_opt_lib(config, "top_vhdl_file", with_ver=True, callback=callback, top_lib=top_lib)
 
             assert len(l) == 1
-            
+
             lib = l[0][0]
             loc = Path(l[0][1])
             ver = l[0][2] #TODO
-            
+
             look.set_top_file(loc, FileObjType.VHDL, lib, ver)
 
         if "top_verilog_file" in config_keys:
@@ -2027,7 +2205,7 @@ class LookupPrj(LookupMulti): #{{{
             LookupSingular._process_config_opt_lib(config, "top_verilog_file", with_ver=True, callback=callback, top_lib=top_lib)
 
             assert len(l) == 1
-            
+
             lib = l[0][0]
             loc = Path(l[0][1])
             ver = l[0][2] #TODO
@@ -2038,7 +2216,7 @@ class LookupPrj(LookupMulti): #{{{
         if "top_x_bd_file" in config_keys:
 
             l = []
-            
+
             def callback(lib: str, loc_str: str, ver):
                 loc = work_dir / loc_str
                 n = (lib, loc, ver)
@@ -2049,7 +2227,7 @@ class LookupPrj(LookupMulti): #{{{
             LookupSingular._process_config_opt_lib(config, "top_x_bd_file", with_ver=True, callback=callback, top_lib=top_lib)
 
             assert len(l) == 1
-            
+
             lib = l[0][0]
             loc = Path(l[0][1])
             ver = l[0][2] #TODO
@@ -2234,7 +2412,7 @@ def create_lookup_from_toml(
             toml_loc = toml_loc.with_suffix('.toml')
         else:
             raise Exception(f'{toml_loc} expected suffix .toml or .json but got {toml_loc.suffix}')
-        
+
     if not toml_loc.is_file():
         if toml_loc.is_absolute() or work_dir is None:
             raise FileNotFoundError(f"ERROR could not find file {toml_loc}")
@@ -2275,8 +2453,8 @@ def create_lookup_from_toml(
     # verilog_file_list = None
     # other_file_list = None
     # x_bd_file_list = None
-    # x_xci_file_list = None 
-    # ext_file_list = None 
+    # x_xci_file_list = None
+    # ext_file_list = None
     if attemp_read_pickle:
         # inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list, x_xci_file_list = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
         inst, file_lists = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
@@ -2357,7 +2535,6 @@ def extract_tuple_str(s)-> Tuple[str, str]:
         lib, f = s.split(':')
         return lib, f
     except:
-        print(f's = {s}')
         raise argparse.ArgumentTypeError("--compile-order-lib expects tuples of lib:path")
 
 def set_log_level_from_verbose(args):
@@ -2372,7 +2549,7 @@ def hdldepends():
         "-v", "--verbose", action="count", help="Verbose level, repeat up to two times"
     )
     parser.add_argument("-c", "--clear-pickle", action="store_true", help="Delete pickle cache files first.")
-    parser.add_argument("--no-pickle", action="store_true", help="Do not write or read any pickle caches") 
+    parser.add_argument("--no-pickle", action="store_true", help="Do not write or read any pickle caches")
     parser.add_argument(
         "config_file",
         nargs="+",  # Allows one or more files
@@ -2408,7 +2585,7 @@ def hdldepends():
         "--ext-file-list-tag", nargs="+", type=extract_tuple_str, help="external file list for a given tag, Expects '<tag>:<file>'"
     )
     parser.add_argument(
-        "--compile-order-json", type=str, 
+        "--compile-order-json", type=str,
         help="Create a complete project compile order JSON file including both compile order and external files"
     )
     parser.add_argument( "--x-tool-version", type=str, help="Xilinx tool version (used for choosing x_bd and x_xci files)")
@@ -2450,16 +2627,19 @@ def hdldepends():
 
     x_tool_version = args.x_tool_version
     if x_tool_version is not None:
-        look.set_x_tool_version(x_tool_version) 
+        look.set_x_tool_version(x_tool_version)
 
     x_device = args.x_device
     if x_device is not None:
-        look.set_x_device(x_device) 
+        look.set_x_device(x_device)
 
 
     if args.top_file_type:
+        f_type_str, file_str = args.file_file_type
+        f_type = string_to_FileObjType(f_type_str)
+        f_loc = Path(file_str)
         assert isinstance(look, LookupPrj)
-        look.set_top_file(Path(args.top_file))
+        look.set_top_file(f_loc, f_type=f_type)
 
     if args.top_file:
         assert isinstance(look, LookupPrj)
