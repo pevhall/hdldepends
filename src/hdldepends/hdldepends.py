@@ -861,67 +861,6 @@ def verilog_remove_comments(verilog_code):
 
     return code_without_comments
 
-# Function to extract module instantiations from Verilog cod
-
-
-
-# def verilog_extract_module_instantiations(verilog_code):
-# # Regular expression to find module instantiations and extract the module name
-# # This matches both named and unnamed instantiations
-#     # module_instantiation_regex = r'(\w+)\s+(?:#\s*\([^)]*\)\s+)?(?:(\w+)\s*)?\(' #)
-#     # module_instantiation_regex = r'(\w+)\s+(?:#\s*\([^)]*\)\s+)?(\w+)(?:\s+#\s*\([^)]*\))?\s*\(' #)
-#     module_instantiation_regex = r'''
-#             (?:^|[;\s}])                    # Start of line or after ; or } or whitespace
-#             \s*                             # Optional whitespace
-#             ([a-zA-Z_]\w*)                  # Module name (capture group 1)
-#             \s*                             # Optional whitespace
-#             (?:\#\s*\(                      # Optional parameter list start
-#                 (?:[^()]*                   # Non-parentheses characters
-#                 |\([^()]*\))*               # Or balanced single-level parentheses
-#             \)\s*)?                         # End of optional parameter list
-#             (?:([a-zA-Z_]\w*)\s*)?          # Optional instance name (capture group 2)
-#             \(                              # Start of port list
-#             (?:[^();]*                      # Non-parentheses/semicolon characters
-#             |\([^()]*\))*                   # Or balanced single-level parentheses
-#             \)\s*;                          # End of port list and semicolon
-#         '''
-#     matches = re.finditer(module_instantiation_regex, verilog_code,  re.VERBOSE | re.MULTILINE)
-#     instantiations = []
-#
-#     for match in matches:
-#         print(f'{match=}')
-#         module_name = match.group(1).strip()
-#         instance_name = match.group(2).strip() if match.group(2) else "unnamed"
-#
-#         VERLOG_RESERVED_WORDS = {
-#             'module', 'endmodule', 'input', 'output', 'inout', 'wire', 'reg',
-#             'always', 'initial', 'begin', 'end', 'if', 'else', 'case', 'endcase',
-#             'for', 'while', 'repeat', 'forever', 'assign', 'parameter', 'localparam',
-#             'generate', 'endgenerate', 'genvar', 'function', 'endfunction',
-#             'task', 'endtask', 'integer', 'real', 'time', 'realtime',
-#             'supply0', 'supply1', 'tri', 'triand', 'trior', 'trireg', 'uwire',
-#             'wand', 'wor', 'logic', 'bit', 'byte', 'shortint', 'int', 'longint',
-#             'shortreal', 'string', 'chandle', 'event', 'packed', 'signed',
-#             'unsigned', 'struct', 'union', 'enum', 'typedef', 'interface',
-#             'endinterface', 'modport', 'clocking', 'endclocking', 'property',
-#             'endproperty', 'sequence', 'endsequence', 'program', 'endprogram',
-#             'class', 'endclass', 'package', 'endpackage', 'import', 'export',
-#             'extends', 'implements', 'super', 'this', 'local', 'protected',
-#             'static', 'automatic', 'rand', 'randc', 'constraint', 'solve',
-#             'before', 'inside', 'dist', 'covergroup', 'endgroup', 'coverpoint',
-#             'cross', 'bins', 'binsof', 'illegal_bins', 'ignore_bins', 'wildcard',
-#             'with', 'matches', 'tagged', 'priority', 'unique', 'unique0',
-#             'final', 'alias', 'always_comb', 'always_ff', 'always_latch'
-#         }
-#
-#         # Filter out Verilog keywords and module declarations that might be mistaken for instantiations
-#         if module_name not in VERLOG_RESERVED_WORDS and instance_name not in VERLOG_RESERVED_WORDS:
-#             instantiations.append(module_name)
-#             instantiations.append(module_name)
-#         print('test match')
-
-    return instantiations
-
 def verilog_extract_module_instantiations(verilog_code):
     """
     Extract all module instantiations from Verilog/SystemVerilog code
@@ -953,6 +892,7 @@ def verilog_extract_module_instantiations(verilog_code):
         'final', 'alias', 'always_comb', 'always_ff', 'always_latch'
     }
     instantiations = []
+    instance_name_arr = []
 
     # Simple tokenization - split by whitespace and common delimiters
     # but keep track of positions for line numbers
@@ -1047,16 +987,11 @@ def verilog_extract_module_instantiations(verilog_code):
                     # This looks like a valid module instantiation!
                     module_name = token
 
-                    # Extract full text (simplified for now)
-                    full_text = f"{module_name}"
-                    if has_params:
-                        full_text += " #(...)"
-                    if instance_name:
-                        full_text += f" {instance_name}"
-                    full_text += "(...);"
-
                     # instantiations.append((module_name, instance_name))
-                    instantiations.append(module_name)
+                    if module_name not in instance_name_arr:
+                        if instance_name is not None:
+                            instance_name_arr.append(instance_name)
+                        instantiations.append(module_name)
 
         i += 1
 
@@ -2316,7 +2251,7 @@ class LookupPrj(LookupMulti): #{{{
                     f_order.write(f"{f_obj.file_type_str_w_ver_tag} {f_obj.lib} {f_obj.loc}\n")
 
 
-    def write_compile_order_lib(self, compile_order_loc: Path, lib:str, f_type: Optional[FileObjType]=None):
+    def write_compile_order_lib(self, compile_order_loc: Path, lib:Optional[str], f_type: Optional[FileObjType]=None):
         log.debug(f'write_compile_order_lib({compile_order_loc=}, {lib=}, {f_type=}')
         lines = 0
         with open(compile_order_loc, "w") as f_order:
@@ -2324,7 +2259,7 @@ class LookupPrj(LookupMulti): #{{{
                 if f_type is not None:
                     if f_obj.f_type != f_type:
                         continue
-                if (f_obj.lib is None and lib == LIB_DEFAULT) or (f_obj.lib == lib):
+                if (lib is None) or (f_obj.lib is None and lib == LIB_DEFAULT) or (f_obj.lib == lib):
                     f_order.write(f"{f_obj.loc}\n")
                     lines += 1
         if lines == 0:
@@ -2561,7 +2496,10 @@ def hdldepends():
     parser.add_argument("--top-entity", type=str, help="Top level entity to use (expects entity to already be added)")
     parser.add_argument("--top-vhdl-lib", type=str, help="Top level VHDL library")
     parser.add_argument(
-        "--compile-order", type=str, help="Path to the compile order output file."
+        "--compile-order", type=str, help="Path to the compile order output file. Each line of the file contains library and paths"
+    )
+    parser.add_argument(
+        "--compile-order-path-only", type=str, help="Path to the compile order output file. File contains Paths only"
     )
     parser.add_argument(
         "--compile-order-type", nargs ="+", type=extract_tuple_str, help="Expects '<type>:<file>' Write compile order of passed  <type> to <file>."
@@ -2609,6 +2547,7 @@ def hdldepends():
             look = create_lookup_from_toml(Path(args.config_file[0]), work_dir=work_dir,
                 force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
             )
+            assert isinstance(look, LookupPrj)
             # look.x_tool_version = x_tool_version
             # look.x_device = x_device
         else:
@@ -2681,6 +2620,11 @@ def hdldepends():
         assert(look.has_top_file())
         assert isinstance(look, LookupPrj)
         look.write_compile_order(Path(args.compile_order))
+
+    if args.compile_order_path_only is not None:
+        assert(look.has_top_file())
+        assert isinstance(look, LookupPrj)
+        look.write_compile_order_lib(Path(args.compile_order_poath_only), None)
 
     if args.compile_order_type is not None:
         assert(look.has_top_file())
