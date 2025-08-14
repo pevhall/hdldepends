@@ -15,4 +15,4 @@ ignore_components = 'delComp2'
 'ext_files@p' = ['./ppp1.xci', './ppp2.xci']
 
 
-vhdl_package_skip_order = { xpm ='{VIV_LIB}/xpm_VCOMP.vhd'}
+vhdl_package_skip_order = { xpm ='{XILINX_VIVADO}/data/ip/xpm/xpm_VCOMP.vhd'}

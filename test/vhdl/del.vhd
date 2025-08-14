@@ -156,8 +156,7 @@ end process;
     tedast_i => tedast_i
   );
 
-
-  i_del : entity work.del2
+  i_del2 : entity work.del2(rtl)
   generic map (
     TEST     => TEST,
     sdf      => sdf,
@@ -173,18 +172,13 @@ end process;
     tedast_i => tedast_i
   );
 
-  i_del : entity work.del3
+  i_del3 : entity work.del3
   generic map (
     TEST     => TEST,
-    sdf      => sdf,
     TESTsdf  => TESTsdf
   )
   port map (
     clk_i    => clk_i,
-    en_i     => en_i,
-    testa_i  => testa_i,
-    testdb_i => testdb_i,
-    tesdt_i  => tesdt_i,
     sdf_i    => sdf_i,
     tedast_i => tedast_i
   );

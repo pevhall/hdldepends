@@ -64,7 +64,7 @@ class log:
 
 TOML_KEY_VER_SEP = '@'
 
-HDL_DEPENDS_VERSION_NUM = 10
+HDL_DEPENDS_VERSION_NUM = 12
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
@@ -735,7 +735,9 @@ vhdl_regex_patterns = {
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "direct_inst": re.compile(
-        r"\s*(\w+)\s*:\s*(?:entity\s+)?(\w+)\.(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
+        # r"\s*(\w+)\s*:\s*(?:entity\s+)?(\w+)\.(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
+        r"\s*(\w+)\s*:\s*(?:entity\s+)?(\w+)\.(\w+)(?:\s*\(\s*\w+\s*\))?(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
+        #r"\w+\s*:\s*entity\s+[\w.]+(?:\(\w+\))?\s*(?:generic\s+map\s*\([^)]*(?:\([^)]*\)[^)]*)*\))?\s*port\s+map\s*\([^)]*(?:\([^)]*\)[^)]*)*\)\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "package_use": re.compile(
@@ -1977,7 +1979,7 @@ class LookupMulti(LookupSingular):  # {{{
                     match loc.suffix:
                         case ".vhd" | ".vhdl":
                             type_to_add_to_if_not_found = FileObjType.VHDL
-                        case ".v":
+                        case ".v" | ".sv":
                             type_to_add_to_if_not_found = FileObjType.VERILOG
                         case ".bd":
                             type_to_add_to_if_not_found = FileObjType.X_BD
@@ -2531,6 +2533,7 @@ def hdldepends():
     args = parser.parse_args()
 
     set_log_level_from_verbose(args)
+    log.debug(f'{HDL_DEPENDS_VERSION_NUM=}')
 
 
     work_dir=Path('.')
@@ -2624,7 +2627,7 @@ def hdldepends():
     if args.compile_order_path_only is not None:
         assert(look.has_top_file())
         assert isinstance(look, LookupPrj)
-        look.write_compile_order_lib(Path(args.compile_order_poath_only), None)
+        look.write_compile_order_lib(Path(args.compile_order_path_only), None)
 
     if args.compile_order_type is not None:
         assert(look.has_top_file())
