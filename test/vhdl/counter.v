@@ -38,7 +38,7 @@ axis_data_to_chdr #(
       .PYLD_FIFO_SIZE  ($clog2(32)),
       .MTU             (MTU),
       .SIDEBAND_AT_END (0)
-    ) axis_data_to_chdr (
+    ) axis_data_to_chdr_i (
       .axis_chdr_clk      (rfnoc_chdr_clk),
       .axis_chdr_rst      (rfnoc_chdr_rst),
       .axis_data_clk      (axis_data_clk),

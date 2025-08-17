@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hdldepends"
-version = "0.1.2"
+version = "0.1.3"
 authors = [
   { name="Pev Hall", email="pev.hall@gmail.com" },
 ]

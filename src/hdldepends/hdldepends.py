@@ -64,7 +64,7 @@ class log:
 
 TOML_KEY_VER_SEP = '@'
 
-HDL_DEPENDS_VERSION_NUM = 12
+HDL_DEPENDS_VERSION_NUM = 13
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
@@ -175,21 +175,18 @@ def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> L
     base_path = resolve_abs_path(base_path) # Get absolute path of base directory
     current_files = set()
 
-    # Process patterns sequentially
+ # Process patterns sequentially
     for pattern in patterns:
         if pattern.startswith('!'):
             # Handle exclusion pattern - remove matching files from current set
             exclude_pattern = pattern[1:]  # Remove the '!' character
 
-            # Convert glob pattern to fnmatch pattern
-            # Replace '**/' with '*/' for deep matching
-            fnmatch_pattern = exclude_pattern.replace('**/', '*/')
+            # Get files that match the exclusion pattern
+            excluded_files = glob.glob(str(base_path / exclude_pattern), recursive=True)
+            excluded_paths = {resolve_abs_path(Path(f)) for f in excluded_files}
 
-            # Filter out matching files from current set
-            current_files = {
-                f for f in current_files
-                if not fnmatch.fnmatch(f, fnmatch_pattern)
-            }
+            # Remove excluded files from current set
+            current_files = current_files - excluded_paths
         else:
             # Handle inclusion pattern - add new matching files
             matched_files = glob.glob(str(base_path / pattern), recursive=True)
@@ -432,7 +429,7 @@ class FileObjDirect(FileObj):
 
     @property
     def file_type_str(self) -> str:
-        return "Direct"
+        return "DIRECT"
 
     def parse_file_again(self)->FileObj:
         return self
@@ -485,7 +482,7 @@ class FileObjVerilog(FileObj):
 
     @property
     def file_type_str(self) -> str:
-        return "Verilog"
+        return "VERILOG"
 
     def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
         super().register_with_lookup(look, skip_loc)
@@ -863,6 +860,120 @@ def verilog_remove_comments(verilog_code):
 
     return code_without_comments
 
+WHITESPACE_CHARS = ' \t\n\r\v\f'
+
+def get_idx_of_next_char(text, idx_start, c):
+    for idx in range(idx_start, len(text)):
+        if text[idx] in c:
+            return idx
+    return None
+
+def get_idx_of_next_char_not(text, idx_start, c):
+    for idx in range(idx_start, len(text)):
+        if text[idx] not in c:
+            return idx
+    return None
+
+def get_prev_idx_of_next_char(text, idx_start, c):
+    for idx in range(idx_start, 0, -1):
+        if text[idx] in c:
+            return idx
+    return None
+
+def get_prev_idx_of_next_char_not(text, idx_start, c):
+    for idx in range(idx_start, 0, -1):
+        if text[idx] not in c:
+            return idx
+    return None
+
+def get_prev_token(text, idx_start):
+    idx_s = get_prev_idx_of_next_char_not(text, idx_start, WHITESPACE_CHARS)
+    if idx_s is None:
+        return None, None
+    idx_e = get_prev_idx_of_next_char(text, idx_s, WHITESPACE_CHARS);
+    if idx_e is None:
+        idx_e = 0
+    return idx_e, text[idx_e+1:idx_s+1]
+
+def get_next_token(text, idx_start):
+    idx_s = get_idx_of_next_char_not(text, idx_start, WHITESPACE_CHARS)
+    if idx_s is None:
+        return None, None
+    idx_e = get_idx_of_next_char(text, idx_s, WHITESPACE_CHARS);
+    if idx_e is None:
+        return None, None
+    return idx_e, text[idx_s:idx_e]
+
+def skip_matching_brackets(text, idx):
+    assert text[idx] == '('
+    depth = 1
+    while depth > 0:
+        idx += 1
+        idx = get_idx_of_next_char(text, idx, '()')
+        if idx is None:
+            return None
+        if text[idx] == '(':
+            depth += 1
+        elif text[idx] == ')':
+            depth -= 1
+
+    return idx
+
+def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
+    valid = True
+    idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
+    if verilog_code[idx] != '.':
+        valid = False
+    print(f'{idx=} {verilog_code[idx]=}')
+
+    while valid:
+        idx = get_idx_of_next_char(verilog_code, idx, ',()')
+        if idx is None:
+            valid = False
+            break
+        c = verilog_code[idx]
+        print(f'{c=} {idx=}')
+        idx += 1
+        if c == ')':
+            break
+        elif c == ',':
+            idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
+            if idx is None:
+                valid = False
+                break
+            if verilog_code[idx] != '.':
+                valid = False
+                break
+        elif c == '(':
+            idx = skip_matching_brackets(verilog_code, idx-1)
+            print(f'aaa {idx=}')
+            if idx is None:
+                valid = False
+                break
+            idx += 1
+    return idx, valid
+
+VERILOG_KEYWORDS = [
+    "always", "always_comb", "always_ff",
+    "always_latch", "assign", "begin",
+    "case", "else", "end",
+    "endcase", "endfunction", "endmodule",
+    "endprimitive", "endtable", "endtask",
+    "enum", "for", "forever",
+    "function", "if", "initial",
+    "input", "int", "localparam",
+    "logic", "module", "negedge",
+    "output", "parameter", "posedge",
+    "primitive", "real", "reg",
+    "repeat", "table", "task",
+    "time", "timescale", "typedef",
+    "while", "wire"
+]
+def token_is_valid_name(token):
+    if token in VERILOG_KEYWORDS:
+        return False
+    return all(char.isalnum() or char == '_' for char in token)
+
 def verilog_extract_module_instantiations(verilog_code):
     """
     Extract all module instantiations from Verilog/SystemVerilog code
@@ -873,131 +984,89 @@ def verilog_extract_module_instantiations(verilog_code):
     Returns:
         List of ModuleInstantiation objects
     """
-    VERILOG_KEYWORDS = {
-        'module', 'endmodule', 'input', 'output', 'inout', 'wire', 'reg',
-        'always', 'initial', 'begin', 'end', 'if', 'else', 'case', 'endcase',
-        'for', 'while', 'repeat', 'forever', 'assign', 'parameter', 'localparam',
-        'generate', 'endgenerate', 'genvar', 'function', 'endfunction',
-        'task', 'endtask', 'integer', 'real', 'time', 'realtime',
-        'supply0', 'supply1', 'tri', 'triand', 'trior', 'trireg', 'uwire',
-        'wand', 'wor', 'logic', 'bit', 'byte', 'shortint', 'int', 'longint',
-        'shortreal', 'string', 'chandle', 'event', 'packed', 'signed',
-        'unsigned', 'struct', 'union', 'enum', 'typedef', 'interface',
-        'endinterface', 'modport', 'clocking', 'endclocking', 'property',
-        'endproperty', 'sequence', 'endsequence', 'program', 'endprogram',
-        'class', 'endclass', 'package', 'endpackage', 'import', 'export',
-        'extends', 'implements', 'super', 'this', 'local', 'protected',
-        'static', 'automatic', 'rand', 'randc', 'constraint', 'solve',
-        'before', 'inside', 'dist', 'covergroup', 'endgroup', 'coverpoint',
-        'cross', 'bins', 'binsof', 'illegal_bins', 'ignore_bins', 'wildcard',
-        'with', 'matches', 'tagged', 'priority', 'unique', 'unique0',
-        'final', 'alias', 'always_comb', 'always_ff', 'always_latch'
-    }
-    instantiations = []
-    instance_name_arr = []
+    instances = set()
+    idx = 0
 
-    # Simple tokenization - split by whitespace and common delimiters
-    # but keep track of positions for line numbers
-    tokens = []
-    current_token = ""
-    line_num = 1
+    while idx is not None:
 
-    for i, char in enumerate(verilog_code):
-        if char == '\n':
-            if current_token.strip():
-                tokens.append((current_token.strip(), line_num))
-            current_token = ""
-            line_num += 1
-        elif char in ' \t\r':
-            if current_token.strip():
-                tokens.append((current_token.strip(), line_num))
-            current_token = ""
-        elif char in '();#,=':
-            if current_token.strip():
-                tokens.append((current_token.strip(), line_num))
-            tokens.append((char, line_num))
-            current_token = ""
+        idx = get_idx_of_next_char(verilog_code, idx, '(')
+        if idx is None:
+            break
+        start = idx
+        print(f'{start=}')
+
+        idx -= 1
+        idx, token_prev = get_prev_token(verilog_code, idx)
+        if token_prev == None:
+            idx = start+1
+            continue
+        instance_name = None
+        instance_module = None
+        if token_is_valid_name(token_prev):
+            instance_name = token_prev
+            print(f'{instance_name=}')
+            idx, token_prev = get_prev_token(verilog_code, idx)
+            if token_prev is not None and token_is_valid_name(token_prev):
+                instance_module = token_prev
+                print(f'{instance_module=}')
+                idx = start+1
+            else:
+                idx = start+1
+                continue
+        elif token_prev == '#':
+            idx, token_prev = get_prev_token(verilog_code, idx)
+            print(f'got param list {token_prev=}')
+
+            if token_prev is not None and token_is_valid_name(token_prev):
+                instance_module = token_prev
+                idx = start+1
+            else:
+                print("not good token instance_module")
+                idx = start+1
+                continue
+            idx = start+1
+            idx, valid = parse_inside_verilog_module_instantiation_map(verilog_code, idx)
+            print(f'param list {valid=}')
+            idx, token = get_next_token(verilog_code, idx)
+            print(f'instance_name {token=}')
+            if token is not None and token_is_valid_name(token):
+                instance_name = token
+                print(f'{instance_name=} {idx=}')
+            else:
+                print("not good token instance_name")
+                idx = start+1
+                continue
+            if idx is None:
+                break
+            idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
+            if idx is None:
+                break
+            if verilog_code[idx] != '(':
+                continue
+            idx += 1
         else:
-            current_token += char
+            idx = start+1
+            continue
+        assert instance_module is not None
+        assert instance_name is not None
 
-    if current_token.strip():
-        tokens.append((current_token.strip(), line_num))
+        print(f'{idx=} {verilog_code[idx]=}')
+        idx, valid = parse_inside_verilog_module_instantiation_map(verilog_code, idx)
+        print(f'port list {valid=} {idx=}')
 
-    # Parse tokens to find module instantiations
-    i = 0
-    while i < len(tokens):
-        token, _ = tokens[i]
+        if idx is None:
+            break
+        # might be in module
+        idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
+        if idx is None:
+            break
+        if verilog_code[idx] != ';':
+            continue
+        log.info(f'module {instance_module} {instance_name}')
+        instances.add(instance_module)
 
-        # Check if this could be a module name (identifier not a keyword)
-        if (re.match(r'^[a-zA-Z_]\w*$', token) and
-            token.lower() not in VERILOG_KEYWORDS):
+    return list(instances)
 
-            # Look ahead to see if this looks like a module instantiation
-            j = i + 1
-
-            # Skip whitespace tokens (shouldn't happen with our tokenizer, but just in case)
-            while j < len(tokens) and tokens[j][0] in [' ', '\t', '\n', '\r']:
-                j += 1
-
-            if j >= len(tokens):
-                break
-
-            # Check for parameter list #(...)
-            has_params = False
-            if tokens[j][0] == '#':
-                has_params = True
-                j += 1
-                if j < len(tokens) and tokens[j][0] == '(':
-                    # Find matching closing paren for parameters
-                    paren_count = 1
-                    j += 1
-                    while j < len(tokens) and paren_count > 0:
-                        if tokens[j][0] == '(':
-                            paren_count += 1
-                        elif tokens[j][0] == ')':
-                            paren_count -= 1
-                        j += 1
-
-            if j >= len(tokens):
-                break
-
-            # Now look for instance name or port list
-            instance_name = None
-
-            # Check if next token is an identifier (instance name)
-            if (j < len(tokens) and
-                re.match(r'^[a-zA-Z_]\w*$', tokens[j][0]) and
-                tokens[j][0].lower() not in VERILOG_KEYWORDS):
-                instance_name = tokens[j][0]
-                j += 1
-
-            # Look for port list starting with '('
-            if j < len(tokens) and tokens[j][0] == '(':
-                # Find matching closing paren for port list
-                paren_count = 1
-                port_start = j
-                j += 1
-                while j < len(tokens) and paren_count > 0:
-                    if tokens[j][0] == '(':
-                        paren_count += 1
-                    elif tokens[j][0] == ')':
-                        paren_count -= 1
-                    j += 1
-
-                # Look for semicolon after port list
-                if j < len(tokens) and tokens[j][0] == ';':
-                    # This looks like a valid module instantiation!
-                    module_name = token
-
-                    # instantiations.append((module_name, instance_name))
-                    if module_name not in instance_name_arr:
-                        if instance_name is not None:
-                            instance_name_arr.append(instance_name)
-                        instantiations.append(module_name)
-
-        i += 1
-
-    return instantiations
 
 # Function to extract include files from Verilog code
 def verilog_extract_include_files(verilog_code):
