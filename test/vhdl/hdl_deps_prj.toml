@@ -2,8 +2,8 @@
 sub ='hdl_deps_sub1.toml'
 ignore_components = 'delComp2'
 'other_files_file@p' = 'extern_deps.txt'
-# 'top_vhdl_file@p' = './del.vhd'
-#top_entity = 'del'
+'top_vhdl_file@p' = './del.vhd'
+# top_entity = 'del'
 'vhdl_files@p' = ['./del3.vhd', './bd_hdl.vhd','./led_controller.vhd', './fir_compiler_0_sim_netlist.vhdl']
 'verilog_files@p' = './counter.v'
 'verilog_files_glob@p' = './*.sv'
@@ -12,7 +12,7 @@ ignore_components = 'delComp2'
 'x_xci_files_glob@p' = ['./*.xci', './*/*.xci','!*delComp2.xci']
 
 'x_tool_version' = '2024.2'
-'ext_files@p' = ['./ppp1.xci', './ppp2.xci']
+'ext_files@p' = ['./ppp1.xdc', './ppp2.xdc']
 
 
 vhdl_package_skip_order = { xpm = '{XILINX_VIVADO}/data/ip/xpm/xpm_VCOMP.vhd'}

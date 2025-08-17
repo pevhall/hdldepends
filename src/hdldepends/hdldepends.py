@@ -64,7 +64,7 @@ class log:
 
 TOML_KEY_VER_SEP = '@'
 
-HDL_DEPENDS_VERSION_NUM = 13
+HDL_DEPENDS_VERSION_NUM = 14
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
@@ -134,7 +134,7 @@ def make_set(v) -> Set:
     if isinstance(v, Set):
         return v
     else:
-        return set(v)
+        return set([v])
 
 def read_text_file_contents(loc : Path):
 
@@ -232,7 +232,7 @@ class Lookup: #{{{
     def get_vhdl_package(self, name: Name, f_obj_required_by : Optional["FileObjVhdl"]) -> Optional["FileObjVhdl"]:
         raise Exception("Virtual called")
 
-    def get_entity(self, name: Name, f_obj_required_by : Optional["FileObj"]) -> Optional["FileObj"]:
+    def get_entity(self, name: Name, f_obj_required_by : Optional["FileObj"], ignore_lib=False) -> Optional["FileObj"]:
         raise Exception("Virtual called")
 
     def add_loc(self, loc: Path, f_obj: "FileObj"):
@@ -489,8 +489,16 @@ class FileObjVerilog(FileObj):
         look.add_verilog_file_name(self.loc.name, self)
 
     def get_file_deps(self, look: Lookup) -> List[FileObj]:
-        file_deps = super().get_file_deps(look)
-        # file_deps += self.get_verilog_include_deps(look)
+        file_deps = []
+        for e in self.entity_deps:
+            f_obj = None
+            try:
+                f_obj = look.get_entity(e, self, ignore_lib=True)
+            except KeyError as e:
+                log.warning(f'Verilog:{e}')
+            if f_obj is not None:
+                self._add_to_f_deps(file_deps, f_obj)
+
         return file_deps
 
     def get_verilog_include_deps(self, look : Lookup) -> List[FileObj]:
@@ -924,7 +932,7 @@ def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
     idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
     if verilog_code[idx] != '.':
         valid = False
-    print(f'{idx=} {verilog_code[idx]=}')
+    # print(f'{idx=} {verilog_code[idx]=}')
 
     while valid:
         idx = get_idx_of_next_char(verilog_code, idx, ',()')
@@ -932,7 +940,7 @@ def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
             valid = False
             break
         c = verilog_code[idx]
-        print(f'{c=} {idx=}')
+        # print(f'{c=} {idx=}')
         idx += 1
         if c == ')':
             break
@@ -946,7 +954,7 @@ def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
                 break
         elif c == '(':
             idx = skip_matching_brackets(verilog_code, idx-1)
-            print(f'aaa {idx=}')
+            # print(f'aaa {idx=}')
             if idx is None:
                 valid = False
                 break
@@ -993,7 +1001,7 @@ def verilog_extract_module_instantiations(verilog_code):
         if idx is None:
             break
         start = idx
-        print(f'{start=}')
+        # print(f'{start=}')
 
         idx -= 1
         idx, token_prev = get_prev_token(verilog_code, idx)
@@ -1004,36 +1012,36 @@ def verilog_extract_module_instantiations(verilog_code):
         instance_module = None
         if token_is_valid_name(token_prev):
             instance_name = token_prev
-            print(f'{instance_name=}')
+            # print(f'{instance_name=}')
             idx, token_prev = get_prev_token(verilog_code, idx)
             if token_prev is not None and token_is_valid_name(token_prev):
                 instance_module = token_prev
-                print(f'{instance_module=}')
+                # print(f'{instance_module=}')
                 idx = start+1
             else:
                 idx = start+1
                 continue
         elif token_prev == '#':
             idx, token_prev = get_prev_token(verilog_code, idx)
-            print(f'got param list {token_prev=}')
+            # print(f'got param list {token_prev=}')
 
             if token_prev is not None and token_is_valid_name(token_prev):
                 instance_module = token_prev
                 idx = start+1
             else:
-                print("not good token instance_module")
+                # print("not good token instance_module")
                 idx = start+1
                 continue
             idx = start+1
             idx, valid = parse_inside_verilog_module_instantiation_map(verilog_code, idx)
-            print(f'param list {valid=}')
+            # print(f'param list {valid=}')
             idx, token = get_next_token(verilog_code, idx)
-            print(f'instance_name {token=}')
+            # print(f'instance_name {token=}')
             if token is not None and token_is_valid_name(token):
                 instance_name = token
-                print(f'{instance_name=} {idx=}')
+                # print(f'{instance_name=} {idx=}')
             else:
-                print("not good token instance_name")
+                # print("not good token instance_name")
                 idx = start+1
                 continue
             if idx is None:
@@ -1050,9 +1058,9 @@ def verilog_extract_module_instantiations(verilog_code):
         assert instance_module is not None
         assert instance_name is not None
 
-        print(f'{idx=} {verilog_code[idx]=}')
+        # print(f'{idx=} {verilog_code[idx]=}')
         idx, valid = parse_inside_verilog_module_instantiation_map(verilog_code, idx)
-        print(f'port list {valid=} {idx=}')
+        # print(f'port list {valid=} {idx=}')
 
         if idx is None:
             break
@@ -1893,19 +1901,28 @@ class LookupSingular(Lookup): # {{{
             item.log_confict(name)
             raise KeyError(f"ERROR: confict on package {name} required by {loc_str}")
 
-    def get_entity(self, name: Name, f_obj_required_by : Optional[FileObj]) -> Optional[FileObj]:
+    def get_entity(self, name: Name, f_obj_required_by : Optional[FileObj], ignore_lib=False) -> Optional[FileObj]:
         loc_str = 'None'
         if f_obj_required_by is not None:
             loc_str = str(f_obj_required_by.loc)
+
+        item = None
         if name not in self.entity_name_2_file_obj:
             if name.lib in self.ignore_set_libs:
                 return None
-
             if name in self.ignore_set_entities:
                 return None
-            raise KeyError(f"ERROR: Could not find entity {name} required by {loc_str}")
+            if ignore_lib:
+                for k, v in self.entity_name_2_file_obj.items():
+                    if k.name == name.name:
+                        item = v
+                        break
+            if item is None:
+                raise KeyError(f"ERROR: Could not find entity {name} required by {loc_str}, {ignore_lib=}")
 
-        item = self.entity_name_2_file_obj[name]
+
+        if item is None:
+            item = self.entity_name_2_file_obj[name]
         if isinstance(item, FileObj):
             return item
         elif isinstance(item, ConflictFileObj):
@@ -1913,7 +1930,7 @@ class LookupSingular(Lookup): # {{{
             if isinstance(resolved, FileObj):
                 return resolved
             item.log_confict(name)
-            raise KeyError(f"ERROR: confict on entity {name} required by {loc_str}")
+            raise KeyError(f"ERROR: confict on entity {name} required by {loc_str}, {ignore_lib=}")
 
     def get_top_lib(self):
         return self.top_lib
@@ -2124,11 +2141,19 @@ class LookupMulti(LookupSingular):  # {{{
         assert f_obj is None or isinstance(f_obj, FileObjVhdl)
         return f_obj
 
-    def get_entity(self, name: Name, f_obj_required_by : Optional[FileObj]) -> Optional[FileObj]:
+    def get_entity(self, name: Name, f_obj_required_by : Optional[FileObj], ignore_lib=False) -> Optional[FileObj]:
         def cb(name: Name, f_obj_required_by : Optional[FileObj]):
-            return LookupSingular.get_entity(self, name, f_obj_required_by)
+            return LookupSingular.get_entity(self, name, f_obj_required_by, ignore_lib=ignore_lib)
 
-        call_back_func_arr = [cb] + [l.get_entity for l in self.look_subs]
+        callbacks = []
+        for l in self.look_subs:
+            def cb2(name:Name, f_obj_required_by):
+                l.get_entity(name=name, f_obj_required_by=f_obj_required_by, ignore_lib=ignore_lib)
+
+            callbacks.append(cb2)
+
+
+        call_back_func_arr = [cb] + callbacks
         return self._get_named_item("entity", name, call_back_func_arr, f_obj_required_by)
 
     def get_file_list(self, lib:Optional[str]=None):
@@ -2357,8 +2382,8 @@ class LookupPrj(LookupMulti): #{{{
                     "file_ext": file_ext,
                     "path": str(ext_file)
                 }
-            if ver_tag is not None:
-                ext_file_entry["ver_tag"] = ver_tag
+                if ver_tag is not None:
+                    ext_file_entry["ver_tag"] = ver_tag
                 files_list.append(ext_file_entry)
 
         # Add compile order files (same logic as write_compile_order)
@@ -2372,7 +2397,7 @@ class LookupPrj(LookupMulti): #{{{
             if f_obj.lib is not None:
                 file_entry["library"] = f_obj.lib
             if f_obj.ver_tag is not None:
-                ext_file_entry["ver_tag"] = f_obj.ver_tag
+                file_entry["ver_tag"] = f_obj.ver_tag
             files_list.append(file_entry)
 
         # Create the final JSON structure
