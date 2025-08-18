@@ -134,7 +134,9 @@ def make_set(v) -> Set:
     if isinstance(v, Set):
         return v
     else:
-        return set([v])
+        s = set()
+        s.add(v)
+        return s
 
 def read_text_file_contents(loc : Path):
 
@@ -1660,6 +1662,7 @@ class LookupSingular(Lookup): # {{{
         )
         if 'ignore_components' in config:
             self.ignore_components = make_set(config['ignore_components'])
+            print(f'{self.ignore_components=}')
 
         if file_lists.vhdl is None:
             file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(
