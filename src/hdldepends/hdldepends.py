@@ -133,10 +133,12 @@ def make_list(v) -> List:
 def make_set(v) -> Set:
     if isinstance(v, Set):
         return v
-    else:
+    elif isinstance(v, str):
         s = set()
         s.add(v)
         return s
+    else:
+        return set(v)
 
 def read_text_file_contents(loc : Path):
 
@@ -1662,7 +1664,6 @@ class LookupSingular(Lookup): # {{{
         )
         if 'ignore_components' in config:
             self.ignore_components = make_set(config['ignore_components'])
-            print(f'{self.ignore_components=}')
 
         if file_lists.vhdl is None:
             file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(
@@ -2151,7 +2152,7 @@ class LookupMulti(LookupSingular):  # {{{
         callbacks = []
         for l in self.look_subs:
             def cb2(name:Name, f_obj_required_by):
-                l.get_entity(name=name, f_obj_required_by=f_obj_required_by, ignore_lib=ignore_lib)
+                return l.get_entity(name=name, f_obj_required_by=f_obj_required_by, ignore_lib=ignore_lib)
 
             callbacks.append(cb2)
 

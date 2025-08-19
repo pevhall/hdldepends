@@ -1,5 +1,5 @@
 
-ignore_libs = 'xpm'
+ignore_libs = ["xpm","ieee"]
 sub ='hdl_deps_sub2.toml'
 # vhdl_files_file = './fw_files1.txt'
 'vhdl_files_glob@s1' = ['./del3_*.vhd']
