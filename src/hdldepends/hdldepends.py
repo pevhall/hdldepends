@@ -1576,6 +1576,7 @@ class LookupSingular(Lookup): # {{{
             # brute force update of dict because resolving a conflict is annoying
             self.package_name_2_file_obj = {}
             self.entity_name_2_file_obj = {}
+            self.verilog_file_name_2_file_obj = {}
             for _, f_obj in self.loc_2_file_obj.items():
                 assert isinstance(f_obj, FileObj)
                 f_obj.register_with_lookup(self, skip_loc=True)
@@ -2435,9 +2436,9 @@ def load_config(toml_loc):
         raise e
 
 def create_lookup_from_toml(
-    toml_loc: Path, work_dir: Optional[Path] = None, attemp_read_pickle = True, write_pickle = True, force_LookupPrj=False, top_lib : Optional[str]= None
+    toml_loc: Path, work_dir: Optional[Path] = None, attemp_read_pickle = True, write_pickle = True, top_lib : Optional[str]= None
 ):
-    log.debug(f'config loc {toml_loc} , work_dir {work_dir}, attemp_read_pickle {attemp_read_pickle}, write_pickle {write_pickle}, force_LookupPrj {force_LookupPrj}, top_lib {top_lib}')
+    log.debug(f'config loc {toml_loc} , work_dir {work_dir}, attemp_read_pickle {attemp_read_pickle}, write_pickle {write_pickle}, top_lib {top_lib}')
 
     is_json = toml_loc.suffix == '.json'
 
@@ -2501,6 +2502,7 @@ def create_lookup_from_toml(
                 log.warning(f"Config {toml_loc} has look_subs but pickle doesn't will not load from pickle")
                 inst = None
         if inst is not None:
+            log.debug("Loading Lookup from pickle")
             return inst
         # if file_lists.vhdl is not None:
         #     vhdl_file_list = file_lists.vhdl
@@ -2527,7 +2529,7 @@ def create_lookup_from_toml(
         raise KeyError(f"Got unexpected key {error_key} in file {toml_loc}")
 
     #TODO check that TOML_KEYS_OTHER do not contain TOML_KEY_VER_SEP!!!
-    if force_LookupPrj or contains_any(config_keys, LookupPrj.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER):
+    if contains_any(config_keys, LookupPrj.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER):
 
         log.info(f"create LookupPrj from {toml_loc}")
         inst = LookupPrj.create_from_config_dict(
@@ -2646,9 +2648,11 @@ def hdldepends():
         if len(args.config_file) == 1:
             log.debug('creating top level project toml')
             look = create_lookup_from_toml(Path(args.config_file[0]), work_dir=work_dir,
-                force_LookupPrj=True, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
+                attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
             )
-            assert isinstance(look, LookupPrj)
+            if not isinstance(look, LookupPrj):
+                assert isinstance(look, LookupSingular)
+                look = LookupPrj([look])
             # look.x_tool_version = x_tool_version
             # look.x_device = x_device
         else:
