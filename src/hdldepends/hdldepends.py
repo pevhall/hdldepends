@@ -64,7 +64,7 @@ class log:
 
 TOML_KEY_VER_SEP = '@'
 
-HDL_DEPENDS_VERSION_NUM = 14
+HDL_DEPENDS_VERSION_NUM = 1.01
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
@@ -1372,6 +1372,7 @@ class FileLists:
 class LookupSingular(Lookup): # {{{
 
     TOML_KEYS_OTHER = [
+        "min_ver",
         "pre_cmds",
         "ignore_libs",
         "ignore_packages",
@@ -1379,6 +1380,7 @@ class LookupSingular(Lookup): # {{{
         "ignore_components",
     ]
     TOML_KEYS_OPT_VER = [
+        "init_files",
         "vhdl_files",
         "vhdl_files_file",
         "vhdl_files_glob",
@@ -1411,6 +1413,7 @@ class LookupSingular(Lookup): # {{{
         self.loc_2_file_obj: dict[Path, FileObjLookup] = {}
         self.verilog_file_name_2_file_obj : dict[str, FileObjVerilog] = {}
         self.ignore_set_libs: set[str] = set()
+        self.init_files : list[FileObj] = []
         self.ignore_set_packages: set[Name] = set()
         self.ignore_set_entities: set[Name] = set()
         self.toml_loc: Optional[Path] = None
@@ -1425,6 +1428,9 @@ class LookupSingular(Lookup): # {{{
         self.x_xci_file_list = None
         self.ext_file_list = None
         self.tag_2_ext_file: dict[str, List[Path]] = {}
+
+    def get_init_files(self) -> List[FileObj]:
+        return self.init_files
 
     def get_tag_2_ext_file(self) -> dict[str, List[Path]]:
         log.debug(f"LookupSingular.get_tag_2_ext_file called -> ret {self.tag_2_ext_file}")
@@ -1618,6 +1624,66 @@ class LookupSingular(Lookup): # {{{
                     cb(top_lib, v, ver)
             else:
                 cb(top_lib, c_val, ver)
+    @staticmethod
+    def _extract_init_files_from_config(config: dict, work_dir : Path) -> List[FileObj]:
+        config_key = 'init_files'
+        init_files : List[FileObj] = []
+        if config_key not in config.keys():
+            return init_files
+
+        config_init_files = config[config_key]
+        if not isinstance(config_init_files, list):
+            raise Exception(f"config file key {config_key} must contain a list, got {type(config_init_files)}")
+
+        for config_init_f in config_init_files:
+            if not isinstance(config_init_f, list):
+                raise Exception(f"config file key {config_key} must contain a list of lists, got list of {type(config_init_f)}")
+            loc_str    = config_init_f[0]
+            f_type_str = config_init_f[1]
+            ver_tag = None
+            lib = LIB_DEFAULT
+            if len(config_init_f) > 2:
+                ver_tag = config_init_f[2]
+                if len(ver_tag) == 0:
+                    ver_tag = None
+            if len(config_init_f) > 3:
+                lib = config_init_f[3]
+                if len(lib) == 0:
+                    lib_tag = None
+            if len(config_init_f) > 4:
+                raise Exception(f"config file key {config_key} must contain a list of lias containing [loc, f_type, ver_tag, lib] but got a len of {len(config_init_f)}")
+
+            loc = path_abs_from_dir(work_dir, Path(loc_str))
+
+            try:
+                f_obj_type = FileObjType[f_type_str.upper()]
+            except KeyError:
+                raise Exception(f"config file key {config_key} list got a bad file type of {f_type_str}")
+
+            if f_obj_type != FileObjType.VHDL:
+                if lib != LIB_DEFAULT:
+                    raise Exception(f"config file key {config_key}. only VHDL files support libraries. Got library {lib} for file type {f_type_str}")
+
+            file_obj = None
+            match f_obj_type:
+                case FileObjType.VHDL:
+                    file_obj = FileObjVhdl(loc, lib, ver_tag)
+                case FileObjType.VERILOG:
+                    file_obj = FileObjVerilog(loc, ver_tag)
+                case FileObjType.OTHER:
+                    file_obj = FileObjOther(loc, ver_tag)
+                case FileObjType.X_BD:
+                    raise Exception(f"config file key {config_key}. does not surrot file type Xilinx Block diagram (.bd)")
+                case FileObjType.X_XCI:
+                    raise Exception(f"config file key {config_key}. does not surrot file type Xilinx IP (.xci)")
+                case FileObjType.DIRECT:
+                    raise Exception(f"config file key {config_key}. does not surrot file type direct")
+            #init_files are just added outside of the worked out compile order so they do not have a level
+            file_obj.level = 0
+
+            init_files.append(file_obj)
+        return init_files
+
 
     @staticmethod
     def extract_set_str_from_config(
@@ -1653,6 +1719,9 @@ class LookupSingular(Lookup): # {{{
         self.ignore_set_libs = LookupSingular.extract_set_str_from_config(
             config, "ignore_libs"
         )
+
+        self.init_files = LookupSingular._extract_init_files_from_config(config, work_dir)
+
         if add_std_pkg_ignore:
             self.ignore_set_libs.add('ieee')
             self.ignore_set_libs.add('std')
@@ -2005,6 +2074,14 @@ class LookupMulti(LookupSingular):  # {{{
             sub.set_x_device(x_device)
         Lookup.set_x_device(self, x_device)
 
+    def get_init_files(self) -> List[FileObj]:
+        f_l = []
+        for sub in self.look_subs:
+            f_l.extend( LookupSingular.get_init_files(sub))
+        # put he look_subs before current instance
+        f_l.extend(LookupSingular.get_init_files(self))
+        return f_l
+
     def get_tag_2_ext_file(self) -> dict[str, List[Path]]:
         log.debug("LookupMulti.get_tag_2_ext_file called")
         tag_2_ext = LookupSingular.get_tag_2_ext_file(self).copy()
@@ -2332,7 +2409,7 @@ class LookupPrj(LookupMulti): #{{{
                 )
 
             assert isinstance(self.f_obj_top, FileObj)
-            self._compile_order = self.f_obj_top.get_compile_order(self)
+            self._compile_order = self.get_init_files() + self.f_obj_top.get_compile_order(self)
         return self._compile_order
 
     def print_compile_order(self):
@@ -2469,6 +2546,11 @@ def create_lookup_from_toml(
 
     work_dir = toml_loc.parents[0]
 
+    if 'min_ver' in config:
+        min_v = config['min_ver']
+        if HDL_DEPENDS_VERSION_NUM < min_v:
+            raise Exception(f"hdldepends version {HDL_DEPENDS_VERSION_NUM} less the {min_v} required by {toml_loc}")
+
     look_subs = []
     if "sub" in config:
         c_locs = config["sub"]
@@ -2483,6 +2565,7 @@ def create_lookup_from_toml(
         for cmd in make_list(config['pre_cmds']):
             log.info(f'Running {cmd=}')
             subprocess.check_output(cmd, shell=True, cwd=work_dir)
+
 
     file_lists = FileLists()
     # vhdl_file_list = None
@@ -2524,8 +2607,10 @@ def create_lookup_from_toml(
     # assert isinstance(config_keys, Set)
     # assert all(isinstance(item, str) for item in config_keys)
     config_keys = keys_rm_opt_ver(config_keys)
-    error_key = issue_key(LookupPrj.TOML_KEYS_OTHER + LookupMulti.TOML_KEYS_OTHER + LookupSingular.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER + LookupMulti.TOML_KEYS_OPT_VER + LookupSingular.TOML_KEYS_OPT_VER, config_keys)
+    ALL_POSIBLE_KEYS = LookupPrj.TOML_KEYS_OTHER + LookupMulti.TOML_KEYS_OTHER + LookupSingular.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER + LookupMulti.TOML_KEYS_OPT_VER + LookupSingular.TOML_KEYS_OPT_VER
+    error_key = issue_key(ALL_POSIBLE_KEYS, config_keys)
     if error_key is not None:
+        log.info(f'{ALL_POSIBLE_KEYS=}')
         raise KeyError(f"Got unexpected key {error_key} in file {toml_loc}")
 
     #TODO check that TOML_KEYS_OTHER do not contain TOML_KEY_VER_SEP!!!

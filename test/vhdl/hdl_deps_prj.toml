@@ -1,4 +1,4 @@
-
+min_ver=1.01
 sub ='hdl_deps_sub1.toml'
 ignore_components = 'delComp2'
 'other_files_file@p' = 'extern_deps.txt'
@@ -14,6 +14,10 @@ ignore_components = 'delComp2'
 'x_tool_version' = '2024.2'
 'ext_files@p' = ['./ppp1.xdc', './ppp2.xdc']
 
+init_files = [['encrypted.vhd', 'VHDL'],
+           ['encrypted2.vhdl', 'vhdl', 'p', 'top_lib'],
+           ['encrypted3.v', 'verilog', 'p']
+	]
 
 vhdl_package_skip_order = { xpm = '{XILINX_VIVADO}/data/ip/xpm/xpm_VCOMP.vhd'}
 #vhdl_package_skip_order = { xpm = '{XILINX_VIVADO}/data/ip/xpm/xpm_VCOMP.vhd', unisim = "{XILINX_VIVADO}/data/vhdl/src/unisims/unisim_VCOMP.vhd"}
