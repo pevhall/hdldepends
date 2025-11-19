@@ -310,13 +310,21 @@ class FileObj:
         self.lib = None #LIB_DEFAULT
         self.entities: List[Name] = []
         self.entity_deps: List[Name] = []
-        self.modification_time =  self.get_modification_time_on_disk()
         self.f_type : Optional[FileObjType] = None
         self.level = None
         self.ver = ver
         self.direct_deps : List = []
         self.x_tool_version = ''
         self.x_device = ''
+        self.update_modification_time()
+
+    def update_modification_time(self):
+        try:
+            self.exists = True
+            self.modification_time =  self.get_modification_time_on_disk()
+        except FileNotFoundError:
+            self.exists = False
+            self.modification_time = None
 
     def requires_update(self):
         return self.get_modification_time_on_disk() != self.modification_time
@@ -388,8 +396,11 @@ class FileObj:
                 order += f_obj._get_compile_order(look, files_passed, components_missed = components_missed, level = level + 1)
 
         for ddep in self.direct_deps:
-            ddep.level = level+1
-            order.append(ddep)
+            if not ddep.exists:
+                log.warning(f"Direct dependency {ddep.loc} does not exist, requried by {self.loc}")
+            else:
+                ddep.level = level+1
+                order.append(ddep)
         order.append(self)
         self.level = level
         return order
@@ -468,8 +479,8 @@ class FileObjXXci(FileObjX):
         return "X_XCI"
 
     def parse_file_again(self)->FileObj:
-        assert self.loc is Path
-        assert self.ver is str or self.ver is None
+        assert isinstance(self.loc,Path), f'{self.loc=}'
+        assert isinstance(self.ver, str) or self.ver is None, f'{self.ver=}'
         return parse_x_xci_file(None, loc=self.loc, ver=self.ver)
 
 class FileObjVerilog(FileObj):
@@ -1366,6 +1377,7 @@ class FileLists:
     other   : Optional[List[Tuple[Path, str]]] = None
     x_bd    : Optional[List[Tuple[Path, str]]] = None
     x_xci   : Optional[List[Tuple[Path, str]]] = None
+    direct  : Optional[List[str]] = None
     tag_2_ext : Optional[dict[str, List[Path]]] = None
 # }}}
 
@@ -1571,6 +1583,18 @@ class LookupSingular(Lookup): # {{{
 
             for f_obj in f_objs:
                 dependency_changes, changes = f_obj.update()
+
+                for d_obj in f_obj.direct_deps:
+                    try: 
+                        new_mod = d_obj.get_modification_time_on_disk()
+                    except FileNotFoundError:
+                        new_mod = None
+
+                    if d_obj.modification_time != new_mod:
+                        d_obj.update_modification_time()
+                        log.info(f"{d_obj.loc} modification time has changed from saved in pickle")
+                        any_changes = True
+
 
                 if dependency_changes:
                     compile_order_out_of_date = True
