@@ -364,7 +364,18 @@ class FileObj:
     def get_file_deps(self, look: Lookup) -> List['FileObj']:
         file_deps = []
         for e in self.entity_deps:
-            f_obj = look.get_entity(e, self)
+            try:
+                f_obj = look.get_entity(e, self)
+            except KeyError as err:
+                f_obj = look.get_entity(e, self, ignore_lib=True)
+                if isinstance(f_obj, FileObjVhdl):
+                    log.error(f'{f_obj.loc} appers to be in wrong library wanted {e.lib} but got {f_obj.lib}')
+                    raise err
+                # if e.lib == LIB_DEFAULT:
+                #     raise err
+                # name = Name(LIB_DEFAULT, e.name)
+                # f_obj = look.get_entity(name, self)
+
             if f_obj is not None:
                 self._add_to_f_deps(file_deps, f_obj)
 
@@ -583,7 +594,7 @@ class FileObjVhdl(FileObj):
                     f_obj = look.get_entity(Name(self.lib, component), self)
                 except KeyError:
                     pass
-                if f_obj is None:
+                if f_obj is None and self.lib != LIB_DEFAULT:
                     try:
                         f_obj = look.get_entity(Name(LIB_DEFAULT, component), self)
                     except KeyError:

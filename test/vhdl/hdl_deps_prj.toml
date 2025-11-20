@@ -2,9 +2,9 @@ min_ver=1.01
 sub ='hdl_deps_sub1.toml'
 ignore_components = 'delComp2'
 'other_files_file@p' = 'extern_deps.txt'
-'top_vhdl_file@p' = './del.vhd'
+'top_vhdl_file@p' = {work = './del.vhd'}
 # top_entity = 'del'
-'vhdl_files@p' = ['./del3.vhd', './bd_hdl.vhd','./led_controller.vhd', './fir_compiler_0_sim_netlist.vhdl']
+'vhdl_files@p' = {work = ['./del3.vhd', './bd_hdl.vhd','./led_controller.vhd', './fir_compiler_0_sim_netlist.vhdl']}
 'verilog_files@p' = './counter.v'
 'verilog_files_glob@p' = './*.sv'
 'x_bd_files_glob@p' = './*.bd'
