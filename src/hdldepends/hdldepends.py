@@ -646,9 +646,9 @@ class ConflictFileObj:
                 can_filter_on_version = False
 
         log.error(f"Conflict on key {key} could not resolve between")
-        log.error(f"  (please resolve buy adding the one of the files to the prject toml):")
+        log.error(f"  (please resolve buy adding the one of the files to a 'higher' toml):")
         if can_filter_on_version:
-            log.error(f"  (or you can filter using x_tool_version)")
+            log.error(f"  (or filter using x_tool_version)")
         for loc, f_obj in self.loc_2_file_obj.items():
             x_info = ''
             if len(f_obj.x_tool_version) != 0 or len(f_obj.x_device) != 0:
@@ -660,21 +660,36 @@ class ConflictFileObj:
 
     def resolve_conflict(self, x_tool_version : str, x_device : str) -> Optional[FileObj]:
         log.debug(f'resolve_conflict ({x_tool_version}, {x_device})')
-        if len(x_tool_version) == 0 or len(x_device) == 0:
+        if len(x_tool_version) == 0:
+            if len(x_device) != 0:
+                log.warning("Cannot filter on x_device if x_tool_version is not specified")
             return None
         chosen = None
         got_version = False
         matched = False
         for f_obj in self.loc_2_file_obj.values():
-            if len(f_obj.x_tool_version) == 0 or len(f_obj.x_device) == 0:
+            if len(f_obj.x_tool_version) == 0:
+                log.warning(f"Could not workin out x_tool_version from {f_obj.loc}")
                 return None
-
             f_obj_got_version = x_tool_version == f_obj.x_tool_version
-            f_obj_matched = got_version and x_device == f_obj.x_device
+            f_obj_matched = False
+            if len(x_device) == 0:
+                if got_version and f_obj_got_version:
+                    assert chosen is not None
+                    log.error(f'got z x_tool_versoin match for two files. Please specify x_device:')
+                    log.error(f'   {chosen.loc} has x_device = {chosen.x_device}')
+                    log.error(f'   {f_obj.loc} has x_device = {f_obj.x_device}')
+                    return None
+            else:
+                if len(f_obj.x_device) == 0:
+                    log.warning(f"Could not workin out x_device from {f_obj.loc}")
+                else:
+                    f_obj_matched = f_obj_got_version and x_device == f_obj.x_device
 
-            if f_obj_matched and matched:
-                log.error(f'Got a x_tool_version and x_device match for both files {f_obj.loc} and {chosen.loc} cannot resolve this issue')
-                return None
+                    if f_obj_matched and matched:
+                        assert chosen is not None
+                        log.error(f'Got a x_tool_version and x_device match for both files {f_obj.loc} and {chosen.loc} cannot resolve this issue')
+                        return None
 
             if x_tool_version < f_obj.x_tool_version:
                 log.debug(f'File {f_obj.loc} x_tool_version to low got {f_obj.x_tool_version} wanted {x_tool_version}')
@@ -684,18 +699,18 @@ class ConflictFileObj:
                 if f_obj.x_tool_version < chosen.x_tool_version:
                     continue
                 if f_obj.x_tool_version == chosen.x_tool_version:
-                    if f_obj.x_device != x_device:
-                        continue
+                    if len(x_device) != 0:
+                        if f_obj.x_device != x_device:
+                            continue
 
             got_version = f_obj_got_version
-            f_obj_matched = f_obj_matched
+            matched = f_obj_matched
             chosen = f_obj
-            if matched:
-                break
 
+        assert chosen is not None
         if not got_version:
             log.warning(f'File has x_tool_version got {chosen.x_tool_version} but wanted {x_tool_version} please create an updated version')
-        else:
+        elif not matched:
             log.warning(f'File has correct version but wrong x_device got {chosen.x_device} but wanted {x_device} please create an updated version')
 
         return chosen
