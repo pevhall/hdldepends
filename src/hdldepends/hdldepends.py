@@ -403,7 +403,7 @@ class FileObj:
         self.f_type: Optional[FileObjType] = None
         self.level = None
         self.ver = ver
-        self.direct_deps: List = []
+        self.direct_deps: List[Path] = []
         self.x_tool_version = ""
         self.x_device = ""
 
@@ -2516,6 +2516,16 @@ class LookupMulti(LookupSingular):  # {{{
                 return f_obj
         return None
 
+    def loc_to_file_obj(self, loc) -> Optional[FileObj]:
+        f_obj = LookupSingular.loc_to_file_obj(self, loc)
+        if f_obj is not None:
+            return f_obj
+        for sub in self.look_subs:
+            f_obj = sub.loc_to_file_obj(loc)
+            if f_obj is not None:
+                return f_obj
+        return None
+
     def set_x_tool_version(self, x_tool_version: str):
         for sub in self.look_subs:
             sub.set_x_tool_version(x_tool_version)
@@ -2986,7 +2996,8 @@ class LookupPrj(LookupMulti):  # {{{
         # Add coefficient files from XCI files (extracted from direct_deps)
         for f_obj in self.compile_order:
             if isinstance(f_obj, FileObjXXci):
-                for direct_dep in f_obj.direct_deps:
+                for direct_dep_loc in f_obj.direct_deps:
+                    direct_dep = self.loc_to_file_obj(direct_dep_loc)
                     if isinstance(direct_dep, FileObjDirect):
                         coef_file_abs = resolve_abs_path(direct_dep.loc)
                         if coef_file_abs in seen_external_files:
@@ -3091,8 +3102,8 @@ def create_lookup_from_toml(
         c_locs = make_list(c_locs)
         for loc in c_locs:
             loc = Path(loc)
-            if loc == toml_loc or (work_dir / loc) == toml_loc:
-                raise Exception(f"ERROR config file {toml_loc} references itself")
+            if loc ==  toml_loc or (work_dir/loc) == toml_loc:
+                raise Exception(f'ERROR config file {toml_loc} references itself')
             look_subs.append(
                 create_lookup_from_toml(loc, work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib)
             )
@@ -3169,7 +3180,7 @@ def create_lookup_from_toml(
     else:
         inst = LookupSingular.create_from_config_dict(config, work_dir=work_dir, top_lib=top_lib, file_lists=file_lists)
 
-    print(f"toml_loc {toml_loc}")
+    log.debug(f"toml_loc {toml_loc}")
     time = get_file_modification_time(toml_loc)
     assert time is not None
     inst.toml_modification_time = time
