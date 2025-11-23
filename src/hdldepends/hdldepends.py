@@ -67,7 +67,7 @@ class log:
 
 TOML_KEY_VER_SEP = "@"
 
-HDL_DEPENDS_VERSION_NUM = 1.01
+HDL_DEPENDS_VERSION_NUM = 1.02
 
 
 # Utility functions {{{
@@ -250,6 +250,11 @@ class Lookup:  # {{{
         self.ignore_components: set[str] = set()
         self.x_tool_version = ""
         self.x_device = ""
+        self.loc_2_file_obj: dict[Path, FileObj] = {}
+
+    def loc_to_file_obj(self, loc) -> Optional["FileObj"]:
+        raise Exception("Virtual called")
+        return None
 
     def get_vhdl_package(self, name: Name, f_obj_required_by: Optional["FileObjVhdl"]) -> Optional["FileObjVhdl"]:
         raise Exception("Virtual called")
@@ -280,9 +285,6 @@ class Lookup:  # {{{
 
     def has_top_file(self) -> bool:
         return False
-
-    def filter_x_files_by_requirements(self):
-        pass
 
     def set_x_tool_version(self, x_tool_version: str):
         if len(self.x_tool_version) != 0:
@@ -387,7 +389,7 @@ class FileObj:
         self.f_type: Optional[FileObjType] = None
         self.level = None
         self.ver = ver
-        self.direct_deps: List = []
+        self.direct_deps: List[Path] = []
         self.x_tool_version = ""
         self.x_device = ""
 
@@ -425,6 +427,12 @@ class FileObj:
             look.add_entity(e, self)
         if not skip_loc:
             look.add_loc(self.loc, self)
+        for ddep_loc in self.direct_deps:
+            ddep_loc = resolve_abs_path(ddep_loc)
+            f_obj = look.loc_to_file_obj(ddep_loc)
+            if f_obj is None:
+                f_obj = FileObjDirect(ddep_loc)
+                look.loc_2_file_obj[ddep_loc] = f_obj
 
     def get_file_deps(self, look: Lookup) -> List["FileObj"]:
         file_deps = []
@@ -470,7 +478,9 @@ class FileObj:
             if f_obj not in files_passed:
                 order += f_obj._get_compile_order(look, files_passed, components_missed=components_missed, level=level + 1)
 
-        for ddep in self.direct_deps:
+        for ddep_loc in self.direct_deps:
+            ddep = look.loc_to_file_obj(ddep_loc)
+            assert(ddep is not None)
             ddep.level = level + 1
             order.append(ddep)
         order.append(self)
@@ -511,8 +521,8 @@ class FileObjOther(FileObj):
 
 
 class FileObjDirect(FileObj):
-    def __init__(self, loc: Path, ver: Optional[str]):
-        super().__init__(loc, ver)
+    def __init__(self, loc: Path):
+        super().__init__(loc, None)
         self.f_type: Optional[FileObjType] = FileObjType.DIRECT
 
     @property
@@ -935,7 +945,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
                 f_str = item[1]
                 log.debug(f"VHDL {loc} coefficent file {f_str}")
                 direct_dep_loc = folder / f_str
-                f_obj.direct_deps.append(FileObjDirect(direct_dep_loc, ver=ver))
+                f_obj.direct_deps.append(direct_dep_loc)
         elif construct == "is_du_within_envelope":
             for item in found:
                 instance = item
@@ -1047,7 +1057,6 @@ def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
     idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
     if verilog_code[idx] != ".":
         valid = False
-    # print(f'{idx=} {verilog_code[idx]=}')
 
     while valid:
         idx = get_idx_of_next_char(verilog_code, idx, ",()")
@@ -1055,7 +1064,6 @@ def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
             valid = False
             break
         c = verilog_code[idx]
-        # print(f'{c=} {idx=}')
         idx += 1
         if c == ")":
             break
@@ -1069,7 +1077,6 @@ def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
                 break
         elif c == "(":
             idx = skip_matching_brackets(verilog_code, idx - 1)
-            # print(f'aaa {idx=}')
             if idx is None:
                 valid = False
                 break
@@ -1398,7 +1405,7 @@ def parse_x_xci_file_xml(look: Optional[Lookup], loc: Path, xci_f, ver: Optional
                         break
 
                     log.info(f"Xilinx XCI (xml) {loc} has coefficient file dependency: {coef_file}")
-                    direct_deps.append(FileObjDirect(coef_loc, ver=ver))
+                    direct_deps.append(coef_loc)
                     break  # Only extract one coefficient file
 
     f_obj = FileObjXXci(loc, ver, x_tool_version, x_device)
@@ -1442,7 +1449,7 @@ def parse_x_xci_file_json(look: Optional[Lookup], loc: Path, xci_f, ver: Optiona
 
     def append_direct_dep(f_str):
         f_loc = folder / f_str
-        direct_deps.append(FileObjDirect(f_loc, ver=ver))
+        direct_deps.append(f_loc)
 
     if "component_parameters" in param:
         comp_param = param["component_parameters"]
@@ -1601,7 +1608,6 @@ class LookupSingular(Lookup):  # {{{
         self.allow_duplicates = allow_duplicates
         self.package_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.entity_name_2_file_obj: dict[Name, FileObjLookup] = {}
-        self.loc_2_file_obj: dict[Path, FileObjLookup] = {}
         self.verilog_file_name_2_file_obj: dict[str, FileObjVerilog] = {}
         self.ignore_set_libs: set[str] = set()
         self.init_files: list[FileObj] = []
@@ -1619,6 +1625,11 @@ class LookupSingular(Lookup):  # {{{
         self.x_xci_file_list = None
         self.ext_file_list = None
         self.tag_2_ext_file: dict[str, List[Path]] = {}
+
+    def loc_to_file_obj(self, loc) -> Optional[FileObj]:
+        if loc in self.loc_2_file_obj:
+            return self.loc_2_file_obj[loc]
+        return None
 
     def get_init_files(self) -> List[FileObj]:
         return self.init_files
@@ -2279,6 +2290,16 @@ class LookupMulti(LookupSingular):  # {{{
         self.f_obj_top = None
         self._compile_order = None
 
+    def loc_to_file_obj(self, loc) -> Optional[FileObj]:
+        f_obj = LookupSingular.loc_to_file_obj(self, loc)
+        if f_obj is not None:
+            return f_obj
+        for sub in self.look_subs:
+            f_obj = sub.loc_to_file_obj(loc)
+            if f_obj is not None:
+                return f_obj
+        return None
+
     def set_x_tool_version(self, x_tool_version: str):
         for sub in self.look_subs:
             sub.set_x_tool_version(x_tool_version)
@@ -2715,7 +2736,8 @@ class LookupPrj(LookupMulti):  # {{{
         # Add coefficient files from XCI files (extracted from direct_deps)
         for f_obj in self.compile_order:
             if isinstance(f_obj, FileObjXXci):
-                for direct_dep in f_obj.direct_deps:
+                for direct_dep_loc in f_obj.direct_deps:
+                    direct_dep = self.loc_to_file_obj(direct_dep_loc)
                     if isinstance(direct_dep, FileObjDirect):
                         coef_file_abs = resolve_abs_path(direct_dep.loc)
                         if coef_file_abs in seen_external_files:
@@ -2819,6 +2841,8 @@ def create_lookup_from_toml(
         c_locs = make_list(c_locs)
         for loc in c_locs:
             loc = Path(loc)
+            if loc ==  toml_loc or (work_dir/loc) == toml_loc:
+                raise Exception(f'ERROR config file {toml_loc} references itself')
             look_subs.append(
                 create_lookup_from_toml(loc, work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib)
             )
@@ -2895,7 +2919,7 @@ def create_lookup_from_toml(
     else:
         inst = LookupSingular.create_from_config_dict(config, work_dir=work_dir, top_lib=top_lib, file_lists=file_lists)
 
-    print(f"toml_loc {toml_loc}")
+    log.debug(f"toml_loc {toml_loc}")
     time = get_file_modification_time(toml_loc)
     assert time is not None
     inst.toml_modification_time = time
