@@ -24,7 +24,7 @@ yaml = None
 try:
     import yaml
 except ModuleNotFoundError:
-        pass
+    pass
 
 
 from pathlib import Path
@@ -33,44 +33,48 @@ from dataclasses import dataclass
 from typing import Optional, Union, List, Tuple, Set, Dict
 
 
-#created own crapy logger because logging doesn't work with f strings {{{
+# created own crapy logger because logging doesn't work with f strings {{{
 
 log_level = 0
+
 
 class log:
     @staticmethod
     def _log(severity, *args, **kwargs):
-        print(f'[{severity}]', *args, **kwargs, file=sys.stderr)
+        print(f"[{severity}]", *args, **kwargs, file=sys.stderr)
 
     @staticmethod
     def error(*args, **kwargs):
-        log._log('ERROR', *args, **kwargs)
+        log._log("ERROR", *args, **kwargs)
 
     @staticmethod
     def warning(*args, **kwargs):
         if log_level >= 0:
-            log._log('WARNING', *args, **kwargs)
+            log._log("WARNING", *args, **kwargs)
 
     @staticmethod
     def info(*args, **kwargs):
         if log_level >= 1:
-            log._log('INFO', *args, **kwargs)
+            log._log("INFO", *args, **kwargs)
 
     @staticmethod
     def debug(*args, **kwargs):
         if log_level >= 2:
-            log._log('DEBUG', *args, **kwargs)
-#}}}
+            log._log("DEBUG", *args, **kwargs)
 
-TOML_KEY_VER_SEP = '@'
+
+# }}}
+
+TOML_KEY_VER_SEP = "@"
 
 HDL_DEPENDS_VERSION_NUM = 1.01
+
 
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
     loc_str = str(loc).format(**os.environ)
     if re.search(r"\{[^}]+\}", loc_str):
-        log.error('Note: program does not currently support curly brackets, {}, in path it expects these to make environment variables')
+        log.error("Note: program does not currently support curly brackets, {}, in path it expects these to make environment variables")
         raise RuntimeError(f"Path {loc_str} still contains env variables which we cannot find in shell's env")
     loc = Path(loc_str)
     # dir = Path(os.path.expandvars(str(dir)))
@@ -79,13 +83,16 @@ def path_abs_from_dir(dir: Path, loc: Path):
         loc = loc.resolve()
     return loc
 
+
 def resolve_abs_path(dir: Path):
     if not dir.is_absolute():
         dir = dir.resolve()
     return dir
 
+
 def get_file_modification_time(f: Path):
     return f.lstat().st_mtime
+
 
 def str_to_name(s: str):
     l = s.split(".")
@@ -96,32 +103,35 @@ def str_to_name(s: str):
     else:
         raise Exception(f"ERROR converting str {s} to Name")
 
+
 def contains_any(a: List, b: List) -> bool:
     for aa in a:
         if aa in b:
             return True
     return False
 
-def key_split_opt_ver(k : str) -> Tuple[str, Optional[str]]:
+
+def key_split_opt_ver(k: str) -> Tuple[str, Optional[str]]:
     split_k = k.split(TOML_KEY_VER_SEP)
     lsk = len(split_k)
     if not (lsk == 1 or lsk == 2):
-        raise Exception(f'ERROR: key {k}, can only have upto 1 {TOML_KEY_VER_SEP}')
+        raise Exception(f"ERROR: key {k}, can only have upto 1 {TOML_KEY_VER_SEP}")
     ver = None
     if lsk == 2:
         ver = split_k[1]
     return split_k[0], ver
 
 
+def keys_rm_opt_ver(keys: List[str]) -> List[str]:
+    return [key_split_opt_ver(k)[0] for k in keys]
 
-def keys_rm_opt_ver( keys : List[str]) -> List[str]:
-    return [key_split_opt_ver(k)[0]  for k in keys ]
 
 def issue_key(good_keys: List, keys: List) -> Optional[str]:
     for k in keys:
         if not k in good_keys:
             return k
     return None
+
 
 def make_list(v) -> List:
     if isinstance(v, List):
@@ -140,23 +150,25 @@ def make_set(v) -> Set:
     else:
         return set(v)
 
-def read_text_file_contents(loc : Path):
 
-    encodings = ['utf-8', 'iso-8859-1','windows-1251', 'windows-1252' ,'gb2312' ,'utf-16']
+def read_text_file_contents(loc: Path):
+
+    encodings = ["utf-8", "iso-8859-1", "windows-1251", "windows-1252", "gb2312", "utf-16"]
     for enc in encodings:
         try:
-            log.debug(f'Opening {loc} with encoding {enc}')
+            log.debug(f"Opening {loc} with encoding {enc}")
             with open(loc, encoding=enc) as f:
                 return f.read()
         except (UnicodeDecodeError, UnicodeError):
-            log.debug(f'Trying next codec')
-    log.debug(f'Could not open {loc} with one of these {encodings}')
-    raise RuntimeError(f'Could not decode file {loc}')
+            log.debug(f"Trying next codec")
+    log.debug(f"Could not open {loc} with one of these {encodings}")
+    raise RuntimeError(f"Could not decode file {loc}")
 
 
 # }}}
 
-def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> List[Path]: # {{{
+
+def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> List[Path]:  # {{{
     """
     Process a list of glob patterns sequentially, including exclusion patterns (starting with '!'),
     to generate a filtered list of file paths. Each pattern modifies the current file list.
@@ -176,12 +188,12 @@ def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> L
         ]
         files = process_glob_patterns(patterns)
     """
-    base_path = resolve_abs_path(base_path) # Get absolute path of base directory
+    base_path = resolve_abs_path(base_path)  # Get absolute path of base directory
     current_files = set()
 
- # Process patterns sequentially
+    # Process patterns sequentially
     for pattern in patterns:
-        if pattern.startswith('!'):
+        if pattern.startswith("!"):
             # Handle exclusion pattern - remove matching files from current set
             exclude_pattern = pattern[1:]  # Remove the '!' character
 
@@ -198,16 +210,19 @@ def process_glob_patterns(patterns: List[str], base_path: Path = Path(".")) -> L
 
     # Return sorted list of absolute paths
     return sorted(current_files)
+
+
 # }}}
 
-class Name: # {{{
+
+class Name:  # {{{
     lib: str
     name: Optional[str]
 
     def __init__(self, lib, name):
-        self.lib = lib.lower() #VHDL case insenstive
+        self.lib = lib.lower()  # VHDL case insenstive
         if name is not None:
-            self.name = name.lower() #VHDL case insenstive
+            self.name = name.lower()  # VHDL case insenstive
         else:
             self.name = None
 
@@ -225,18 +240,21 @@ class Name: # {{{
 
     def __hash__(self):
         return hash((self.lib, self.name))
-#}}}
 
-class Lookup: #{{{
+
+# }}}
+
+
+class Lookup:  # {{{
     def __init__(self):
-        self.ignore_components : set[str] = set()
-        self.x_tool_version = ''
-        self.x_device = ''
+        self.ignore_components: set[str] = set()
+        self.x_tool_version = ""
+        self.x_device = ""
 
-    def get_vhdl_package(self, name: Name, f_obj_required_by : Optional["FileObjVhdl"]) -> Optional["FileObjVhdl"]:
+    def get_vhdl_package(self, name: Name, f_obj_required_by: Optional["FileObjVhdl"]) -> Optional["FileObjVhdl"]:
         raise Exception("Virtual called")
 
-    def get_entity(self, name: Name, f_obj_required_by : Optional["FileObj"], ignore_lib=False) -> Optional["FileObj"]:
+    def get_entity(self, name: Name, f_obj_required_by: Optional["FileObj"], ignore_lib=False) -> Optional["FileObj"]:
         raise Exception("Virtual called")
 
     def add_loc(self, loc: Path, f_obj: "FileObj"):
@@ -245,49 +263,103 @@ class Lookup: #{{{
     def add_entity(self, name: Name, f_obj: "FileObj"):
         pass
 
-    def check_if_skip_from_order(self, loc:Path)->bool:
+    def check_if_skip_from_order(self, loc: Path) -> bool:
         raise Exception("Virtual called")
 
-    def add_verilog_file_name(self, file_name: str, f_obj : "FileObjVerilog"):
+    def add_verilog_file_name(self, file_name: str, f_obj: "FileObjVerilog"):
         pass
 
     def add_vhdl_package(self, name: Name, f_obj: "FileObjVhdl"):
         pass
 
-    def write_file_list(self, f_loc, f_type : Optional["FileObjType"]=None, lib : Optional[str] = None):
+    def write_file_list(self, f_loc, f_type: Optional["FileObjType"] = None, lib: Optional[str] = None):
         pass
 
-    def write_ext_file_list(self, f_loc : Path, tag : Optional[str] = None):
+    def write_ext_file_list(self, f_loc: Path, tag: Optional[str] = None):
         pass
 
     def has_top_file(self) -> bool:
         return False
 
-    def set_x_tool_version(self, x_tool_version : str):
+    def filter_x_files_by_requirements(self):
+        pass
+
+    def set_x_tool_version(self, x_tool_version: str):
         if len(self.x_tool_version) != 0:
             if x_tool_version != self.x_tool_version:
-                log.warning(f'Lookup::set_x_tool_version({x_tool_version}) was previously {self.x_tool_version}')
+                log.warning(f"Lookup::set_x_tool_version({x_tool_version}) was previously {self.x_tool_version}")
             else:
-                log.info(f'Lookup::set_x_tool_version({x_tool_version}) set to the same value twice')
+                log.info(f"Lookup::set_x_tool_version({x_tool_version}) set to the same value twice")
         else:
-            log.debug(f'Lookup::set_x_tool_version({x_tool_version})')
+            log.debug(f"Lookup::set_x_tool_version({x_tool_version})")
         self.x_tool_version = x_tool_version
 
-    def set_x_device(self, x_device : str):
+    def set_x_device(self, x_device: str):
         if len(self.x_device) != 0:
             if x_device != self.x_device:
-                log.warning(f'Lookup::set_x_device({x_device}) was previously {self.x_device}')
+                log.warning(f"Lookup::set_x_device({x_device}) was previously {self.x_device}")
             else:
-                log.info(f'Lookup::set_x_device({x_device}) set to the same value twice')
+                log.info(f"Lookup::set_x_device({x_device}) set to the same value twice")
         else:
-            log.debug(f'Lookup::set_x_device({x_device})')
+            log.debug(f"Lookup::set_x_device({x_device})")
         self.x_device = x_device
 
-#}}}
+    def filter_x_files_by_requirements(self):
+        """Remove X files that don't match x_tool_version and x_device requirements"""
+        if not self.x_tool_version or not self.x_device:
+            log.debug("No X requirements set, skipping X file filtering")
+            return
+
+        files_to_remove = []
+
+        for loc, f_obj_lookup in list(self.loc_2_file_obj.items()):
+            # Handle both FileObj and ConflictFileObj
+            f_objs = []
+            if isinstance(f_obj_lookup, ConflictFileObj):
+                f_objs = list(f_obj_lookup.get_f_objs())
+            elif isinstance(f_obj_lookup, FileObj):
+                f_objs = [f_obj_lookup]
+
+            for f_obj in f_objs:
+                if isinstance(f_obj, FileObjX):  # FileObjXBd or FileObjXXci
+                    if not f_obj.matches_x_requirements(self.x_tool_version, self.x_device):
+                        log.info(
+                            f"Filtering out {f_obj.file_type_str} file {loc} - doesn't match X requirements "
+                            f"(file: {f_obj.x_tool_version}/{f_obj.x_device}, "
+                            f"required: {self.x_tool_version}/{self.x_device})"
+                        )
+                        files_to_remove.append((loc, f_obj))
+
+        # Remove filtered files from all dictionaries
+        for loc, f_obj in files_to_remove:
+            # Remove from loc_2_file_obj
+            if loc in self.loc_2_file_obj:
+                del self.loc_2_file_obj[loc]
+
+            # Remove from entity_name_2_file_obj
+            for entity in f_obj.entities:
+                if entity in self.entity_name_2_file_obj:
+                    stored_obj = self.entity_name_2_file_obj[entity]
+                    if isinstance(stored_obj, FileObj) and stored_obj.loc == loc:
+                        del self.entity_name_2_file_obj[entity]
+                    elif isinstance(stored_obj, ConflictFileObj):
+                        # Remove from conflict, delete entire entry if no conflicts remain
+                        if loc in stored_obj.loc_2_file_obj:
+                            del stored_obj.loc_2_file_obj[loc]
+                            if len(stored_obj.loc_2_file_obj) == 1:
+                                # Only one file left, replace ConflictFileObj with FileObj
+                                remaining = list(stored_obj.loc_2_file_obj.values())[0]
+                                self.entity_name_2_file_obj[entity] = remaining
+                            elif len(stored_obj.loc_2_file_obj) == 0:
+                                del self.entity_name_2_file_obj[entity]
+
+
+# }}}
 
 # Constructs to handle files {{{
 
-LIB_DEFAULT = 'work'
+LIB_DEFAULT = "work"
+
 
 class FileObjType(Enum):
     VHDL = auto()
@@ -304,27 +376,20 @@ def string_to_FileObjType(s: str) -> FileObjType:
     except KeyError:
         raise ValueError(f"Unknown file type: {s}")
 
+
 class FileObj:
-    def __init__(self, loc: Path, ver : Optional[str]=None):
+    def __init__(self, loc: Path, ver: Optional[str] = None):
         self.loc = resolve_abs_path(loc)
-        self.lib = None #LIB_DEFAULT
+        self.lib = None  # LIB_DEFAULT
         self.entities: List[Name] = []
         self.entity_deps: List[Name] = []
-        self.f_type : Optional[FileObjType] = None
+        self.modification_time = self.get_modification_time_on_disk()
+        self.f_type: Optional[FileObjType] = None
         self.level = None
         self.ver = ver
-        self.direct_deps : List = []
-        self.x_tool_version = ''
-        self.x_device = ''
-        self.update_modification_time()
-
-    def update_modification_time(self):
-        try:
-            self.exists = True
-            self.modification_time =  self.get_modification_time_on_disk()
-        except FileNotFoundError:
-            self.exists = False
-            self.modification_time = None
+        self.direct_deps: List = []
+        self.x_tool_version = ""
+        self.x_device = ""
 
     def requires_update(self):
         return self.get_modification_time_on_disk() != self.modification_time
@@ -332,8 +397,8 @@ class FileObj:
     def get_modification_time_on_disk(self):
         return get_file_modification_time(self.loc)
 
-    def replace(self, f_obj : 'FileObj'):
-        self.__dict__.update(f_obj.__dict__) #this didn't work
+    def replace(self, f_obj: "FileObj"):
+        self.__dict__.update(f_obj.__dict__)  # this didn't work
 
     @property
     def file_type_str(self) -> str:
@@ -355,21 +420,21 @@ class FileObj:
         if f_obj not in file_deps:
             file_deps.append(f_obj)
 
-    def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
+    def register_with_lookup(self, look: Lookup, skip_loc: bool = False):
         for e in self.entities:
             look.add_entity(e, self)
         if not skip_loc:
             look.add_loc(self.loc, self)
 
-    def get_file_deps(self, look: Lookup) -> List['FileObj']:
+    def get_file_deps(self, look: Lookup) -> List["FileObj"]:
         file_deps = []
         for e in self.entity_deps:
             try:
                 f_obj = look.get_entity(e, self)
             except KeyError as err:
                 f_obj = look.get_entity(e, self, ignore_lib=True)
-                if isinstance(f_obj, FileObjVhdl):
-                    log.error(f'{f_obj.loc} appers to be in wrong library wanted {e.lib} but got {f_obj.lib}')
+                if isinstance(f_obj, FileObjVhdl) and isinstance(self, FileObjVhdl):
+                    log.error(f'{f_obj.loc} appers to be in wrong library wanted {e.lib} but got {f_obj.lib}. Requesting file is {self.loc}')
                     raise err
                 # if e.lib == LIB_DEFAULT:
                 #     raise err
@@ -381,42 +446,38 @@ class FileObj:
 
         return file_deps
 
-    def parse_file_again(self)->"FileObj":
+    def parse_file_again(self) -> "FileObj":
         raise Exception("must be overloaded should be unreachable")
 
-    def equivalent(self, other : "FileObj"):
-        result = (self.loc == other.loc
-                  and self.lib == other.lib
-                  and self.entities == other.entities
-                  and self.entity_deps == other.entity_deps
-                  and self.f_type == other.f_type
-                  and self.ver == other.ver
-                  )
+    def equivalent(self, other: "FileObj"):
+        result = (
+            self.loc == other.loc
+            and self.lib == other.lib
+            and self.entities == other.entities
+            and self.entity_deps == other.entity_deps
+            and self.f_type == other.f_type
+            and self.ver == other.ver
+        )
         return result
 
-    def _get_compile_order(
-        self, look: Lookup, files_passed=[], components_missed=[], level=0
-    ) -> List['FileObj']:
+    def _get_compile_order(self, look: Lookup, files_passed=[], components_missed=[], level=0) -> List["FileObj"]:
         files_passed.append(self)
         if look.check_if_skip_from_order(self.loc):
-        # if self.loc in look.files_2_skip_from_order:
+            # if self.loc in look.files_2_skip_from_order:
             return []
         order: List[FileObj] = []
         for f_obj in self.get_file_deps(look):
             if f_obj not in files_passed:
-                order += f_obj._get_compile_order(look, files_passed, components_missed = components_missed, level = level + 1)
+                order += f_obj._get_compile_order(look, files_passed, components_missed=components_missed, level=level + 1)
 
         for ddep in self.direct_deps:
-            if not ddep.exists:
-                log.warning(f"Direct dependency {ddep.loc} does not exist, requried by {self.loc}")
-            else:
-                ddep.level = level+1
-                order.append(ddep)
+            ddep.level = level + 1
+            order.append(ddep)
         order.append(self)
         self.level = level
         return order
 
-    def get_compile_order(self, look: Lookup) -> List['FileObj']:
+    def get_compile_order(self, look: Lookup) -> List["FileObj"]:
         return self._get_compile_order(look)
 
     def update(self) -> Tuple[bool, bool]:
@@ -425,11 +486,11 @@ class FileObj:
             f_obj = self.parse_file_again()
             equivalent = f_obj.equivalent(self)
             if equivalent:
-                log.info(f'file {self.loc} updated but dependencies remain unchanaged')
+                log.info(f"file {self.loc} updated but dependencies remain unchanaged")
                 self.modification_time = f_obj.modification_time
                 return False, True
             else:
-                log.info(f'file {self.loc} is updated and dependencies have changed')
+                log.info(f"file {self.loc} is updated and dependencies have changed")
                 self.replace(f_obj)
 
                 return True, True
@@ -437,80 +498,105 @@ class FileObj:
 
 
 class FileObjOther(FileObj):
-    def __init__(self, loc: Path, ver : Optional[str]):
+    def __init__(self, loc: Path, ver: Optional[str]):
         super().__init__(loc, ver)
-        self.f_type : Optional[FileObjType] = FileObjType.OTHER
+        self.f_type: Optional[FileObjType] = FileObjType.OTHER
 
     @property
     def file_type_str(self) -> str:
         return "Other"
 
-    def parse_file_again(self)->FileObj:
+    def parse_file_again(self) -> FileObj:
         return self
 
+
 class FileObjDirect(FileObj):
-    def __init__(self, loc: Path, ver : Optional[str]):
+    def __init__(self, loc: Path, ver: Optional[str]):
         super().__init__(loc, ver)
-        self.f_type : Optional[FileObjType] = FileObjType.DIRECT
+        self.f_type: Optional[FileObjType] = FileObjType.DIRECT
 
     @property
     def file_type_str(self) -> str:
         return "DIRECT"
 
-    def parse_file_again(self)->FileObj:
+    def parse_file_again(self) -> FileObj:
         return self
 
+
 class FileObjX(FileObj):
-    def __init__(self, loc: Path, ver : Optional[str], x_tool_version : str, x_device : str):
+    def __init__(self, loc: Path, ver: Optional[str], x_tool_version: str, x_device: str):
         super().__init__(loc, ver)
         self.x_tool_version = x_tool_version
         self.x_device = x_device
 
+    def matches_x_requirements(self, required_x_tool_version: str, required_x_device: str) -> bool:
+        """Check if this X file matches the required tool version and device"""
+        if not required_x_tool_version or not required_x_device:
+            return True  # No requirements specified, accept all
+
+        if not self.x_tool_version or not self.x_device:
+            return True  # File has no X info, assume compatible
+
+        # Check tool version - file version must match required version
+        if self.x_tool_version != required_x_tool_version:
+            log.debug(f"File {self.loc} x_tool_version {self.x_tool_version}, required {required_x_tool_version}")
+            return False
+
+        # Check device match
+        if self.x_device != required_x_device:
+            log.debug(f"File {self.loc} x_device {self.x_device} != required {required_x_device}")
+            return False
+
+        return True
+
+
 class FileObjXBd(FileObjX):
-    def __init__(self, loc: Path, ver : Optional[str], x_tool_version : str, x_device : str):
+    def __init__(self, loc: Path, ver: Optional[str], x_tool_version: str, x_device: str):
         super().__init__(loc, ver, x_tool_version, x_device)
-        self.f_type : Optional[FileObjType] = FileObjType.X_BD
+        self.f_type: Optional[FileObjType] = FileObjType.X_BD
 
     @property
     def file_type_str(self) -> str:
         return "X_BD"
 
-    def parse_file_again(self)->FileObj:
+    def parse_file_again(self) -> FileObj:
         assert self.loc is Path
         assert self.ver is str or self.ver is None
         return parse_x_bd_file(None, loc=self.loc, ver=self.ver)
 
+
 class FileObjXXci(FileObjX):
-    def __init__(self, loc: Path, ver : Optional[str], x_tool_version : str, x_device : str):
+    def __init__(self, loc: Path, ver: Optional[str], x_tool_version: str, x_device: str):
         super().__init__(loc, ver, x_tool_version, x_device)
-        self.f_type : Optional[FileObjType] = FileObjType.X_XCI
+        self.f_type: Optional[FileObjType] = FileObjType.X_XCI
 
     @property
     def file_type_str(self) -> str:
         return "X_XCI"
 
-    def parse_file_again(self)->FileObj:
-        assert isinstance(self.loc,Path), f'{self.loc=}'
-        assert isinstance(self.ver, str) or self.ver is None, f'{self.ver=}'
+    def parse_file_again(self) -> FileObj:
+        assert self.loc is Path
+        assert self.ver is str or self.ver is None
         return parse_x_xci_file(None, loc=self.loc, ver=self.ver)
+
 
 class FileObjVerilog(FileObj):
 
     @dataclass
     class VInc:
-        name : str
-        is_sys : bool
+        name: str
+        is_sys: bool
 
-    def __init__(self, loc: Path, ver : Optional[str]):
+    def __init__(self, loc: Path, ver: Optional[str]):
         super().__init__(loc, ver)
-        self.verilog_includes : List[FileObjVerilog.VInc] = []
-        self.f_type : Optional[FileObjType] = FileObjType.VERILOG
+        self.verilog_includes: List[FileObjVerilog.VInc] = []
+        self.f_type: Optional[FileObjType] = FileObjType.VERILOG
 
     @property
     def file_type_str(self) -> str:
         return "VERILOG"
 
-    def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
+    def register_with_lookup(self, look: Lookup, skip_loc: bool = False):
         super().register_with_lookup(look, skip_loc)
         look.add_verilog_file_name(self.loc.name, self)
 
@@ -521,13 +607,13 @@ class FileObjVerilog(FileObj):
             try:
                 f_obj = look.get_entity(e, self, ignore_lib=True)
             except KeyError as e:
-                log.warning(f'Verilog:{e}')
+                log.warning(f"Verilog:{e}")
             if f_obj is not None:
                 self._add_to_f_deps(file_deps, f_obj)
 
         return file_deps
 
-    def get_verilog_include_deps(self, look : Lookup) -> List[FileObj]:
+    def get_verilog_include_deps(self, look: Lookup) -> List[FileObj]:
         raise Exception("TODO!!!")
         # file_deps = []
         #
@@ -542,16 +628,15 @@ class FileObjVerilog(FileObj):
         #             log.error('could not find sys include')
         # return file_deps
 
-    def parse_file_again(self)->FileObj:
+    def parse_file_again(self) -> FileObj:
         assert self.ver is str or self.ver is None
         return parse_verilog_file(None, loc=self.loc, ver=self.ver)
 
-
-    def equivalent(self, other : FileObj):
+    def equivalent(self, other: FileObj):
         if not isinstance(other, FileObjVerilog):
             return False
 
-        result = (self.verilog_includes == other.verilog_includes)
+        result = self.verilog_includes == other.verilog_includes
         if not result:
             return result
 
@@ -560,26 +645,25 @@ class FileObjVerilog(FileObj):
 
 class FileObjVhdl(FileObj):
 
-    def __init__(self, loc: Path, lib: str, ver:Optional[str]):
+    def __init__(self, loc: Path, lib: str, ver: Optional[str]):
         super().__init__(loc, ver=ver)
         self.lib = lib
         self.vhdl_packages: List[Name] = []
         self.vhdl_component_decl: List[str] = []
         self.vhdl_component_deps: List[str] = []
         self.vhdl_package_deps: List[Name] = []
-        self.f_type : Optional[FileObjType] = FileObjType.VHDL
+        self.f_type: Optional[FileObjType] = FileObjType.VHDL
 
     @property
     def file_type_str(self):
         return "VHDL"
 
-    def register_with_lookup(self, look: Lookup, skip_loc : bool = False):
+    def register_with_lookup(self, look: Lookup, skip_loc: bool = False):
         super().register_with_lookup(look, skip_loc)
         for p in self.vhdl_packages:
             look.add_vhdl_package(p, self)
 
-
-    def get_file_deps(self, look: Lookup, components_missed = []) -> List[FileObj]:
+    def get_file_deps(self, look: Lookup, components_missed=[]) -> List[FileObj]:
         file_deps = super().get_file_deps(look)
         file_deps += self.get_vhdl_package_deps(look)
 
@@ -594,7 +678,7 @@ class FileObjVhdl(FileObj):
                     f_obj = look.get_entity(Name(self.lib, component), self)
                 except KeyError:
                     pass
-                if f_obj is None and self.lib != LIB_DEFAULT:
+                if f_obj is None:
                     try:
                         f_obj = look.get_entity(Name(LIB_DEFAULT, component), self)
                     except KeyError:
@@ -610,10 +694,11 @@ class FileObjVhdl(FileObj):
                                 break
                 if not found:
                     if component not in components_missed:
-                        log.warning(f'File {self.loc} cannot find component declartion for component dependency {component}')
+                        log.warning(f"File {self.loc} cannot find component declartion for component dependency {component}")
                         components_missed.append(component)
         return file_deps
-    def get_vhdl_package_deps(self, look : Lookup) -> List[FileObj]:
+
+    def get_vhdl_package_deps(self, look: Lookup) -> List[FileObj]:
         file_deps = []
 
         for p in self.vhdl_package_deps:
@@ -622,21 +707,20 @@ class FileObjVhdl(FileObj):
                 self._add_to_f_deps(file_deps, f_obj)
         return file_deps
 
-    def parse_file_again(self)->FileObj:
+    def parse_file_again(self) -> FileObj:
         return parse_vhdl_file(None, self.loc, self.lib, self.ver)
 
-
-    def equivalent(self, other : FileObj):
+    def equivalent(self, other: FileObj):
         if not isinstance(other, FileObjVhdl):
             return False
 
-        result = (self.vhdl_packages == other.vhdl_packages
-            and self.vhdl_package_deps == other.vhdl_package_deps)
+        result = self.vhdl_packages == other.vhdl_packages and self.vhdl_package_deps == other.vhdl_package_deps
 
         if not result:
             return result
 
         return FileObj.equivalent(self, other)
+
 
 class ConflictFileObj:
     def __init__(self, conflict_list: List[FileObj]):
@@ -657,72 +741,57 @@ class ConflictFileObj:
                 can_filter_on_version = False
 
         log.error(f"Conflict on key {key} could not resolve between")
-        log.error(f"  (please resolve buy adding the one of the files to a 'higher' toml):")
+        log.error(f"  (please resolve buy adding the one of the files to the prject toml):")
         if can_filter_on_version:
-            log.error(f"  (or filter using x_tool_version)")
+            log.error(f"  (or you can filter using x_tool_version)")
         for loc, f_obj in self.loc_2_file_obj.items():
-            x_info = ''
+            x_info = ""
             if len(f_obj.x_tool_version) != 0 or len(f_obj.x_device) != 0:
-                x_info = f' ({f_obj.x_tool_version} {f_obj.x_device})'
+                x_info = f" ({f_obj.x_tool_version} {f_obj.x_device})"
             log.error(f"\t{loc}{x_info}")
 
     def get_f_objs(self):
         return self.loc_2_file_obj.values()
 
-    def resolve_conflict(self, x_tool_version : str, x_device : str) -> Optional[FileObj]:
-        log.debug(f'resolve_conflict ({x_tool_version}, {x_device})')
-        if len(x_tool_version) == 0:
-            if len(x_device) != 0:
-                log.warning("Cannot filter on x_device if x_tool_version is not specified")
+    def resolve_conflict(self, x_tool_version: str, x_device: str) -> Optional[FileObj]:
+        log.debug(f"resolve_conflict ({x_tool_version}, {x_device})")
+        if len(x_tool_version) == 0 or len(x_device) == 0:
             return None
         chosen = None
         got_version = False
         matched = False
         for f_obj in self.loc_2_file_obj.values():
-            if len(f_obj.x_tool_version) == 0:
-                log.warning(f"Could not workin out x_tool_version from {f_obj.loc}")
+            if len(f_obj.x_tool_version) == 0 or len(f_obj.x_device) == 0:
                 return None
-            f_obj_got_version = x_tool_version == f_obj.x_tool_version
-            f_obj_matched = False
-            if len(x_device) == 0:
-                if got_version and f_obj_got_version:
-                    assert chosen is not None
-                    log.error(f'got z x_tool_versoin match for two files. Please specify x_device:')
-                    log.error(f'   {chosen.loc} has x_device = {chosen.x_device}')
-                    log.error(f'   {f_obj.loc} has x_device = {f_obj.x_device}')
-                    return None
-            else:
-                if len(f_obj.x_device) == 0:
-                    log.warning(f"Could not workin out x_device from {f_obj.loc}")
-                else:
-                    f_obj_matched = f_obj_got_version and x_device == f_obj.x_device
 
-                    if f_obj_matched and matched:
-                        assert chosen is not None
-                        log.error(f'Got a x_tool_version and x_device match for both files {f_obj.loc} and {chosen.loc} cannot resolve this issue')
-                        return None
+            f_obj_got_version = x_tool_version == f_obj.x_tool_version
+            f_obj_matched = got_version and x_device == f_obj.x_device
+
+            if f_obj_matched and matched:
+                log.error(f"Got a x_tool_version and x_device match for both files {f_obj.loc} and {chosen.loc} cannot resolve this issue")
+                return None
 
             if x_tool_version < f_obj.x_tool_version:
-                log.debug(f'File {f_obj.loc} x_tool_version to low got {f_obj.x_tool_version} wanted {x_tool_version}')
+                log.debug(f"File {f_obj.loc} x_tool_version to low got {f_obj.x_tool_version} wanted {x_tool_version}")
                 continue
 
             if chosen is not None:
                 if f_obj.x_tool_version < chosen.x_tool_version:
                     continue
                 if f_obj.x_tool_version == chosen.x_tool_version:
-                    if len(x_device) != 0:
-                        if f_obj.x_device != x_device:
-                            continue
+                    if f_obj.x_device != x_device:
+                        continue
 
             got_version = f_obj_got_version
-            matched = f_obj_matched
+            f_obj_matched = f_obj_matched
             chosen = f_obj
+            if matched:
+                break
 
-        assert chosen is not None
         if not got_version:
-            log.warning(f'File has x_tool_version got {chosen.x_tool_version} but wanted {x_tool_version} please create an updated version')
-        elif not matched:
-            log.warning(f'File has correct version but wrong x_device got {chosen.x_device} but wanted {x_device} please create an updated version')
+            log.warning(f"File has x_tool_version got {chosen.x_tool_version} but wanted {x_tool_version} please create an updated version")
+        else:
+            log.warning(f"File has correct version but wrong x_device got {chosen.x_device} but wanted {x_device} please create an updated version")
 
         return chosen
 
@@ -731,17 +800,19 @@ FileObjLookup = Union[ConflictFileObj, FileObj]
 
 # }}}
 
+
 # VHDL file parsing {{{
 def vhdl_remove_comments(vhdl_code: str) -> str:
     # Remove single-line comments
-    code_without_single_comments = re.sub(r'--.*$', '', vhdl_code, flags=re.MULTILINE)
+    code_without_single_comments = re.sub(r"--.*$", "", vhdl_code, flags=re.MULTILINE)
 
     # Remove multi-line comments
-    code_without_comments = re.sub(r'/\*.*?\*/', '', code_without_single_comments, flags=re.DOTALL)
+    code_without_comments = re.sub(r"/\*.*?\*/", "", code_without_single_comments, flags=re.DOTALL)
 
     return code_without_comments
 
-def vhdl_remove_protected_code(vhdl_code:str) -> str:
+
+def vhdl_remove_protected_code(vhdl_code: str) -> str:
     """Removes protected code from VHDL code.
 
     Args:
@@ -763,6 +834,7 @@ def vhdl_remove_protected_code(vhdl_code:str) -> str:
     else:
         return vhdl_code
 
+
 vhdl_regex_patterns = {
     "package_decl": re.compile(
         r"(?<!:)\bpackage\s+(\w+)\s+is.*?end(?:\s+(?:package|\1)|;)",
@@ -783,22 +855,17 @@ vhdl_regex_patterns = {
     "direct_inst": re.compile(
         # r"\s*(\w+)\s*:\s*(?:entity\s+)?(\w+)\.(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
         r"\s*(\w+)\s*:\s*(?:entity\s+)?(\w+)\.(\w+)(?:\s*\(\s*\w+\s*\))?(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
-        #r"\w+\s*:\s*entity\s+[\w.]+(?:\(\w+\))?\s*(?:generic\s+map\s*\([^)]*(?:\([^)]*\)[^)]*)*\))?\s*port\s+map\s*\([^)]*(?:\([^)]*\)[^)]*)*\)\s*;",
+        # r"\w+\s*:\s*entity\s+[\w.]+(?:\(\w+\))?\s*(?:generic\s+map\s*\([^)]*(?:\([^)]*\)[^)]*)*\))?\s*port\s+map\s*\([^)]*(?:\([^)]*\)[^)]*)*\)\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
-    "package_use": re.compile(
-        r"\buse\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE
-    ),
-    "c_coef_file": re.compile(
-        r'_?attribute\s+C_COEF_FILE?\s+of\s+(\w+)\s*:\s*label\s+is\s+"([^"]+)"\s*;', re.IGNORECASE
-    ),
-    "is_du_within_envelope": re.compile(
-        r'_?attribute\s+is_du_within_envelope?\s+of\s+(\w+)\s*:\s*label\s+is\s+"true"\s*;', re.IGNORECASE
-    )
+    "package_use": re.compile(r"\buse\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE),
+    "c_coef_file": re.compile(r'_?attribute\s+C_COEF_FILE?\s+of\s+(\w+)\s*:\s*label\s+is\s+"([^"]+)"\s*;', re.IGNORECASE),
+    "is_du_within_envelope": re.compile(r'_?attribute\s+is_du_within_envelope?\s+of\s+(\w+)\s*:\s*label\s+is\s+"true"\s*;', re.IGNORECASE),
 }
 
+
 def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None) -> FileObjVhdl:
-    """ Function to find matches in the VHDL code """
+    """Function to find matches in the VHDL code"""
 
     log.info(f"passing VHDL file {lib:} {loc}:")
     vhdl = read_text_file_contents(loc)
@@ -819,19 +886,19 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
             for item in found:
                 name = Name(lib, item)
                 if name not in f_obj.vhdl_packages:
-                    log.debug(f'VHDL {loc} declares package {name}')
+                    log.debug(f"VHDL {loc} declares package {name}")
                     f_obj.vhdl_packages.append(name)
         elif construct == "entity_decl":
             for item in found:
                 name = Name(lib, item)
                 if name not in f_obj.entities:
                     f_obj.entities.append(name)
-                    log.debug(f'VHDL {loc} component decared {name}')
+                    log.debug(f"VHDL {loc} component decared {name}")
         elif construct == "vhdl_component_decl":
             for item in found:
                 component = item
                 if component not in f_obj.vhdl_component_decl:
-                    log.debug(f'VHDL {loc} component decared {component}')
+                    log.debug(f"VHDL {loc} component decared {component}")
                     f_obj.vhdl_component_decl.append(component)
         elif construct == "component_inst":
             for item in found:
@@ -839,7 +906,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
                 component = item[1]
                 deps_inst_dict_comp[inst] = component
                 if component not in f_obj.vhdl_component_deps:
-                    log.debug(f'VHDL {loc} component {component}')
+                    log.debug(f"VHDL {loc} component {component}")
                     f_obj.vhdl_component_deps.append(component)
         elif construct == "direct_inst":
             for item in found:
@@ -850,7 +917,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
                 name = Name(l, item[2])
                 deps_inst_dict_direct[inst] = name
                 if name not in f_obj.entity_deps:
-                    log.debug(f'VHDL {loc} requires {name}')
+                    log.debug(f"VHDL {loc} requires {name}")
                     f_obj.entity_deps.append(name)
         elif construct == "package_use":
             for item in found:
@@ -860,27 +927,25 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
                 name = Name(l, item[1])
                 if name not in f_obj.vhdl_package_deps:
                     f_obj.vhdl_package_deps.append(name)
-                    log.debug(f'VHDL {loc} requires package {name}')
-                    log.debug(
-                        f"\tpackage_use {name}"
-                    )  # Extract library and package names`
+                    log.debug(f"VHDL {loc} requires package {name}")
+                    log.debug(f"\tpackage_use {name}")  # Extract library and package names`
         elif construct == "c_coef_file":
             for item in found:
                 # instance = item[0]
                 f_str = item[1]
-                log.debug(f'VHDL {loc} coefficent file {f_str}')
-                direct_dep_loc = folder/f_str
-                f_obj.direct_deps.append(FileObjDirect(direct_dep_loc,ver=ver))
+                log.debug(f"VHDL {loc} coefficent file {f_str}")
+                direct_dep_loc = folder / f_str
+                f_obj.direct_deps.append(FileObjDirect(direct_dep_loc, ver=ver))
         elif construct == "is_du_within_envelope":
             for item in found:
                 instance = item
-                log.debug(f'VHDL {loc} ecrypted instance {instance}')
+                log.debug(f"VHDL {loc} ecrypted instance {instance}")
                 deps_inst_to_remove.append(instance)
         else:
             raise Exception(f"error construct '{construct}'")
 
     for inst_rm in deps_inst_to_remove:
-        log.debug(f'VHDL {loc} removeinb ecrypted instance {inst_rm}')
+        log.debug(f"VHDL {loc} removeinb ecrypted instance {inst_rm}")
         if inst_rm in deps_inst_dict_comp:
             comp = deps_inst_dict_comp[inst_rm]
             f_obj.vhdl_component_deps.remove(comp)
@@ -888,8 +953,7 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
             name = deps_inst_dict_direct[inst_rm]
             f_obj.entity_deps.remove(name)
         else:
-            log.error(f'In encypted IP {loc} could not remove depency on instance {inst_rm}')
-
+            log.error(f"In encypted IP {loc} could not remove depency on instance {inst_rm}")
 
     if look is not None:
         f_obj.register_with_lookup(look)
@@ -898,18 +962,21 @@ def parse_vhdl_file(look: Optional[Lookup], loc: Path, lib=LIB_DEFAULT, ver=None
 
 # }}}
 
+
 # Verilog file parsing {{{
 # Pre-process Verilog code to remove comments
 def verilog_remove_comments(verilog_code):
     # Remove single-line comments
-    code_without_single_comments = re.sub(r'//.*$', '', verilog_code, flags=re.MULTILINE)
+    code_without_single_comments = re.sub(r"//.*$", "", verilog_code, flags=re.MULTILINE)
 
     # Remove multi-line comments
-    code_without_comments = re.sub(r'/\*.*?\*/', '', code_without_single_comments, flags=re.DOTALL)
+    code_without_comments = re.sub(r"/\*.*?\*/", "", code_without_single_comments, flags=re.DOTALL)
 
     return code_without_comments
 
-WHITESPACE_CHARS = ' \t\n\r\v\f'
+
+WHITESPACE_CHARS = " \t\n\r\v\f"
+
 
 def get_idx_of_next_char(text, idx_start, c):
     for idx in range(idx_start, len(text)):
@@ -917,11 +984,13 @@ def get_idx_of_next_char(text, idx_start, c):
             return idx
     return None
 
+
 def get_idx_of_next_char_not(text, idx_start, c):
     for idx in range(idx_start, len(text)):
         if text[idx] not in c:
             return idx
     return None
+
 
 def get_prev_idx_of_next_char(text, idx_start, c):
     for idx in range(idx_start, 0, -1):
@@ -929,72 +998,77 @@ def get_prev_idx_of_next_char(text, idx_start, c):
             return idx
     return None
 
+
 def get_prev_idx_of_next_char_not(text, idx_start, c):
     for idx in range(idx_start, 0, -1):
         if text[idx] not in c:
             return idx
     return None
 
+
 def get_prev_token(text, idx_start):
     idx_s = get_prev_idx_of_next_char_not(text, idx_start, WHITESPACE_CHARS)
     if idx_s is None:
         return None, None
-    idx_e = get_prev_idx_of_next_char(text, idx_s, WHITESPACE_CHARS);
+    idx_e = get_prev_idx_of_next_char(text, idx_s, WHITESPACE_CHARS)
     if idx_e is None:
         idx_e = 0
-    return idx_e, text[idx_e+1:idx_s+1]
+    return idx_e, text[idx_e + 1 : idx_s + 1]
+
 
 def get_next_token(text, idx_start):
     idx_s = get_idx_of_next_char_not(text, idx_start, WHITESPACE_CHARS)
     if idx_s is None:
         return None, None
-    idx_e = get_idx_of_next_char(text, idx_s, WHITESPACE_CHARS);
+    idx_e = get_idx_of_next_char(text, idx_s, WHITESPACE_CHARS)
     if idx_e is None:
         return None, None
     return idx_e, text[idx_s:idx_e]
 
+
 def skip_matching_brackets(text, idx):
-    assert text[idx] == '('
+    assert text[idx] == "("
     depth = 1
     while depth > 0:
         idx += 1
-        idx = get_idx_of_next_char(text, idx, '()')
+        idx = get_idx_of_next_char(text, idx, "()")
         if idx is None:
             return None
-        if text[idx] == '(':
+        if text[idx] == "(":
             depth += 1
-        elif text[idx] == ')':
+        elif text[idx] == ")":
             depth -= 1
 
     return idx
 
+
 def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
     valid = True
     idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
-    if verilog_code[idx] != '.':
+    if verilog_code[idx] != ".":
         valid = False
     # print(f'{idx=} {verilog_code[idx]=}')
 
     while valid:
-        idx = get_idx_of_next_char(verilog_code, idx, ',()')
+        idx = get_idx_of_next_char(verilog_code, idx, ",()")
         if idx is None:
             valid = False
             break
         c = verilog_code[idx]
         # print(f'{c=} {idx=}')
         idx += 1
-        if c == ')':
+        if c == ")":
             break
-        elif c == ',':
+        elif c == ",":
             idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
             if idx is None:
                 valid = False
                 break
-            if verilog_code[idx] != '.':
+            if verilog_code[idx] != ".":
                 valid = False
                 break
-        elif c == '(':
-            idx = skip_matching_brackets(verilog_code, idx-1)
+        elif c == "(":
+            idx = skip_matching_brackets(verilog_code, idx - 1)
             # print(f'aaa {idx=}')
             if idx is None:
                 valid = False
@@ -1002,26 +1076,57 @@ def parse_inside_verilog_module_instantiation_map(verilog_code, idx):
             idx += 1
     return idx, valid
 
+
 VERILOG_KEYWORDS = [
-    "always", "always_comb", "always_ff",
-    "always_latch", "assign", "begin",
-    "case", "else", "end",
-    "endcase", "endfunction", "endmodule",
-    "endprimitive", "endtable", "endtask",
-    "enum", "for", "forever",
-    "function", "if", "initial",
-    "input", "int", "localparam",
-    "logic", "module", "negedge",
-    "output", "parameter", "posedge",
-    "primitive", "real", "reg",
-    "repeat", "table", "task",
-    "time", "timescale", "typedef",
-    "while", "wire"
+    "always",
+    "always_comb",
+    "always_ff",
+    "always_latch",
+    "assign",
+    "begin",
+    "case",
+    "else",
+    "end",
+    "endcase",
+    "endfunction",
+    "endmodule",
+    "endprimitive",
+    "endtable",
+    "endtask",
+    "enum",
+    "for",
+    "forever",
+    "function",
+    "if",
+    "initial",
+    "input",
+    "int",
+    "localparam",
+    "logic",
+    "module",
+    "negedge",
+    "output",
+    "parameter",
+    "posedge",
+    "primitive",
+    "real",
+    "reg",
+    "repeat",
+    "table",
+    "task",
+    "time",
+    "timescale",
+    "typedef",
+    "while",
+    "wire",
 ]
+
+
 def token_is_valid_name(token):
     if token in VERILOG_KEYWORDS:
         return False
-    return all(char.isalnum() or char == '_' for char in token)
+    return all(char.isalnum() or char == "_" for char in token)
+
 
 def verilog_extract_module_instantiations(verilog_code):
     """
@@ -1038,7 +1143,7 @@ def verilog_extract_module_instantiations(verilog_code):
 
     while idx is not None:
 
-        idx = get_idx_of_next_char(verilog_code, idx, '(')
+        idx = get_idx_of_next_char(verilog_code, idx, "(")
         if idx is None:
             break
         start = idx
@@ -1047,7 +1152,7 @@ def verilog_extract_module_instantiations(verilog_code):
         idx -= 1
         idx, token_prev = get_prev_token(verilog_code, idx)
         if token_prev == None:
-            idx = start+1
+            idx = start + 1
             continue
         instance_name = None
         instance_module = None
@@ -1058,22 +1163,22 @@ def verilog_extract_module_instantiations(verilog_code):
             if token_prev is not None and token_is_valid_name(token_prev):
                 instance_module = token_prev
                 # print(f'{instance_module=}')
-                idx = start+1
+                idx = start + 1
             else:
-                idx = start+1
+                idx = start + 1
                 continue
-        elif token_prev == '#':
+        elif token_prev == "#":
             idx, token_prev = get_prev_token(verilog_code, idx)
             # print(f'got param list {token_prev=}')
 
             if token_prev is not None and token_is_valid_name(token_prev):
                 instance_module = token_prev
-                idx = start+1
+                idx = start + 1
             else:
                 # print("not good token instance_module")
-                idx = start+1
+                idx = start + 1
                 continue
-            idx = start+1
+            idx = start + 1
             idx, valid = parse_inside_verilog_module_instantiation_map(verilog_code, idx)
             # print(f'param list {valid=}')
             idx, token = get_next_token(verilog_code, idx)
@@ -1083,18 +1188,18 @@ def verilog_extract_module_instantiations(verilog_code):
                 # print(f'{instance_name=} {idx=}')
             else:
                 # print("not good token instance_name")
-                idx = start+1
+                idx = start + 1
                 continue
             if idx is None:
                 break
             idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
             if idx is None:
                 break
-            if verilog_code[idx] != '(':
+            if verilog_code[idx] != "(":
                 continue
             idx += 1
         else:
-            idx = start+1
+            idx = start + 1
             continue
         assert instance_module is not None
         assert instance_name is not None
@@ -1109,9 +1214,9 @@ def verilog_extract_module_instantiations(verilog_code):
         idx = get_idx_of_next_char_not(verilog_code, idx, WHITESPACE_CHARS)
         if idx is None:
             break
-        if verilog_code[idx] != ';':
+        if verilog_code[idx] != ";":
             continue
-        log.info(f'module {instance_module} {instance_name}')
+        log.info(f"module {instance_module} {instance_name}")
         instances.add(instance_module)
 
     return list(instances)
@@ -1123,7 +1228,7 @@ def verilog_extract_include_files(verilog_code):
     matches = re.finditer(include_regex, verilog_code)
     includes = []
     for match in matches:
-        inc_is_sys = match.group(1) == '<'
+        inc_is_sys = match.group(1) == "<"
         inc_name = [match.group(2) for match in matches]
         includes.append((inc_name, inc_is_sys))
 
@@ -1131,7 +1236,7 @@ def verilog_extract_include_files(verilog_code):
 
 
 def verilog_extract_module_declarations(verilog_code):
-    module_declaration_regex = r'module\s+(\w+)\s*(?:\#\s*\([^)]*\))?\s*\(' #)
+    module_declaration_regex = r"module\s+(\w+)\s*(?:\#\s*\([^)]*\))?\s*\("  # )
     matches = re.finditer(module_declaration_regex, verilog_code)
     declarations = []
 
@@ -1142,11 +1247,11 @@ def verilog_extract_module_declarations(verilog_code):
     return declarations
 
 
-def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjVerilog:
+def parse_verilog_file(look: Optional[Lookup], loc: Path, ver: Optional[str]) -> FileObjVerilog:
     log.info(f"passing Verilog file {loc}:")
 
-    if loc.suffix != '.v' and loc.suffix != '.sv':
-        log.warning(f'unexpected verilog extension on {loc} expected .v or .sv')
+    if loc.suffix != ".v" and loc.suffix != ".sv":
+        log.warning(f"unexpected verilog extension on {loc} expected .v or .sv")
 
     # with open(loc, "r", encoding=detect_encoding(loc)) as file:
     #     verilog_code = file.read()
@@ -1154,54 +1259,52 @@ def parse_verilog_file(look : Optional[Lookup], loc : Path, ver : Optional[str])
 
     clean_code = verilog_remove_comments(verilog_code)
 
-
     f_obj = FileObjVerilog(loc, ver)
     for inc_name, inc_is_sys in verilog_extract_include_files(clean_code):
         vinc = f_obj.VInc(inc_name, inc_is_sys)
         if vinc not in f_obj.verilog_includes:
-            log.debug(f'Verilog {loc} includes {inc_name}')
+            log.debug(f"Verilog {loc} includes {inc_name}")
             f_obj.verilog_includes.append(vinc)
     for module_name in verilog_extract_module_declarations(clean_code):
         name = Name(LIB_DEFAULT, module_name)
         if name not in f_obj.entities:
-            log.debug(f'Verilog {loc} declards {module_name}')
+            log.debug(f"Verilog {loc} declards {module_name}")
             f_obj.entities.append(name)
     for module_name in verilog_extract_module_instantiations(clean_code):
         name = Name(LIB_DEFAULT, module_name)
         if name not in f_obj.entity_deps:
-            log.debug(f'Verilog {loc} requires {module_name}')
+            log.debug(f"Verilog {loc} requires {module_name}")
             f_obj.entity_deps.append(name)
-
 
     if look is not None:
         f_obj.register_with_lookup(look)
     return f_obj
-#}}}
 
-#Parse X_XCI: Xilinx XCI IP File {{{
-def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Optional[str]) -> Optional[FileObjXXci]:
 
+# }}}
+
+
+# Parse X_XCI: Xilinx XCI IP File {{{
+def parse_x_xci_file_xml(look: Optional[Lookup], loc: Path, xci_f, ver: Optional[str]) -> Optional[FileObjXXci]:
 
     log.debug(f"called parse_x_xci_file_xml({loc=})")
     try:
-        etree = xml_et.parse(xci_f) #raises xml_et.ParseError
+        etree = xml_et.parse(xci_f)  # raises xml_et.ParseError
     except xml_et.ParseError as e:
         return None
 
-    ns = {'spirit': 'http://www.spiritconsortium.org/XMLSchema/SPIRIT/1685-2009',
-          'xilinx': 'http://www.xilinx.com'
-    }
+    ns = {"spirit": "http://www.spiritconsortium.org/XMLSchema/SPIRIT/1685-2009", "xilinx": "http://www.xilinx.com"}
 
     root = etree.getroot()
 
-    def get_elem_text(xml_tag:str)->str:
-        xml_elem = root.find('.//spirit:'+xml_tag, ns)
+    def get_elem_text(xml_tag: str) -> str:
+        xml_elem = root.find(".//spirit:" + xml_tag, ns)
         assert xml_elem is not None
         assert isinstance(xml_elem.text, str)
         return xml_elem.text.lower()
 
-    def get_elem_text_arr(xml_tag:str)->List[str]:
-        xml_elem_arr = root.findall('.//spirit:'+xml_tag, ns)
+    def get_elem_text_arr(xml_tag: str) -> List[str]:
+        xml_elem_arr = root.findall(".//spirit:" + xml_tag, ns)
 
         text_arr = []
         for xml_elem in xml_elem_arr:
@@ -1209,11 +1312,10 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
             text_arr.append(xml_elem.text)
         return text_arr
 
-
-    xml_lib_arr = get_elem_text_arr('library')
-    if(len(xml_lib_arr) != 1 or xml_lib_arr[0] != 'xci'):
+    xml_lib_arr = get_elem_text_arr("library")
+    if len(xml_lib_arr) != 1 or xml_lib_arr[0] != "xci":
         raise RuntimeError("XML Parsing: Expected to find xci under library tag. This may not be an xci file")
-    module_name_arr = get_elem_text_arr('instanceName')
+    module_name_arr = get_elem_text_arr("instanceName")
     if len(module_name_arr) == 0:
         raise RuntimeError("XML Parsing: could not find .//spirit:instance in xml file")
     if len(module_name_arr) > 1:
@@ -1222,39 +1324,42 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
 
     name = Name(LIB_DEFAULT, module_name)
 
-
     x_dev = None
     x_package = None
     x_speed = None
     x_temp = None
     x_tool_version = None
 
-    for elem in root.findall('.//spirit:configurableElementValue', ns):
+    for elem in root.findall(".//spirit:configurableElementValue", ns):
         PP = "PROJECT_PARAM."
         RP = "RUNTIME_PARAM."
 
-        id = elem.attrib.get('{'+ns['spirit']+'}referenceId')
+        id = elem.attrib.get("{" + ns["spirit"] + "}referenceId")
+
         def val() -> str:
             result = elem.text
             if elem.text is None:
-                if id == PP+'TEMPERATURE_GRADE':
-                    log.warning(f'In Xilinx XCI (xml) {loc} got empty {PP}TEMPERATURE_GRADE assming temperate grade i\n'
-                        f'\t(If this is incorect please make a report a bug with the XCI file, correct part number and vivado version)')
-                    result = 'i'
+                if id == PP + "TEMPERATURE_GRADE":
+                    log.warning(
+                        f"In Xilinx XCI (xml) {loc} got empty {PP}TEMPERATURE_GRADE assming temperate grade i\n"
+                        f"\t(If this is incorect please make a report a bug with the XCI file, correct part number and vivado version)"
+                    )
+                    result = "i"
 
             if not isinstance(result, str):
-                raise RuntimeError(f'In Xilinx XCI (xml) {loc} for {id=} we got {result=} expected a string')
+                raise RuntimeError(f"In Xilinx XCI (xml) {loc} for {id=} we got {result=} expected a string")
             assert isinstance(result, str)
             return result
-        if id == PP+'DEVICE':
+
+        if id == PP + "DEVICE":
             x_dev = val()
-        if id == PP+'PACKAGE':
+        if id == PP + "PACKAGE":
             x_package = val()
-        if id == PP+'SPEEDGRADE':
+        if id == PP + "SPEEDGRADE":
             x_speed = val()
-        if id == PP+'TEMPERATURE_GRADE':
+        if id == PP + "TEMPERATURE_GRADE":
             x_temp = val()
-        if id == RP+'SWVERSION':
+        if id == RP + "SWVERSION":
             x_tool_version = val()
 
     assert x_dev is not None
@@ -1267,9 +1372,34 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
     x_device = x_device.lower()
     log.info(f"Xilinx XCI (xml) {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
 
-    direct_deps=[]
+    direct_deps = []
+    folder = loc.parent
 
-    #NOTE coef file info is not currently begin extracted
+    # Extract coefficient files
+    for elem in root.findall(".//spirit:configurableElementValue", ns):
+        id = elem.attrib.get("{" + ns["spirit"] + "}referenceId")
+        if id is not None:
+            id_upper = id.upper()
+            # Check for coefficient file parameters (case-insensitive)
+            if any(param in id_upper for param in ["COEFFICIENT_FILE", "COE_FILE", "COEFFILE"]):
+                if elem.text is not None and len(elem.text.strip()) > 0:
+                    coef_file = elem.text.strip()
+
+                    # Skip placeholder values (not actual files)
+                    # Check if it has a valid file extension (.coe, .mif, etc.)
+                    coef_path = Path(coef_file)
+                    if not coef_path.suffix or coef_path.suffix.lower() not in [".coe", ".mif"]:
+                        log.debug(f"Xilinx XCI (xml) {loc} has placeholder coefficient parameter: '{coef_file}' - skipping")
+                        break
+
+                    coef_loc = path_abs_from_dir(folder, coef_path)
+                    if not coef_loc.is_file():
+                        log.warning(f"Coefficient file referenced in XCI {loc} not found: {coef_loc} - skipping")
+                        break
+
+                    log.info(f"Xilinx XCI (xml) {loc} has coefficient file dependency: {coef_file}")
+                    direct_deps.append(FileObjDirect(coef_loc, ver=ver))
+                    break  # Only extract one coefficient file
 
     f_obj = FileObjXXci(loc, ver, x_tool_version, x_device)
     f_obj.entities.append(name)
@@ -1278,47 +1408,66 @@ def parse_x_xci_file_xml(look : Optional[Lookup], loc : Path, xci_f,  ver : Opti
         f_obj.register_with_lookup(look)
     return f_obj
 
-def parse_x_xci_file_json(look : Optional[Lookup], loc : Path, xci_f, ver : Optional[str]) -> Optional[FileObjXXci]:
+
+def parse_x_xci_file_json(look: Optional[Lookup], loc: Path, xci_f, ver: Optional[str]) -> Optional[FileObjXXci]:
     try:
-        xci_dict = json.load(xci_f) #throws json.decoder.JSONDecodeError
+        xci_dict = json.load(xci_f)  # throws json.decoder.JSONDecodeError
     except json.decoder.JSONDecodeError as e:
         return None
 
-    ip_inst =  xci_dict["ip_inst"]
+    ip_inst = xci_dict["ip_inst"]
     module_name = ip_inst["xci_name"]
     name = Name(LIB_DEFAULT, module_name)
 
-    param = ip_inst['parameters']
+    param = ip_inst["parameters"]
 
-    prj_param = param['project_parameters']
+    prj_param = param["project_parameters"]
+
     def js_val(js):
         assert len(js) == 1
-        return js[0]['value']
-    x_device = f"{js_val(prj_param['DEVICE'])}-{js_val(prj_param['PACKAGE'])}{js_val(prj_param['SPEEDGRADE'])}-{js_val(prj_param['TEMPERATURE_GRADE'])}"
+        return js[0]["value"]
+
+    x_device = (
+        f"{js_val(prj_param['DEVICE'])}-{js_val(prj_param['PACKAGE'])}{js_val(prj_param['SPEEDGRADE'])}-{js_val(prj_param['TEMPERATURE_GRADE'])}"
+    )
     x_device = x_device.lower()
 
-    run_param = param['runtime_parameters']
-    x_tool_version = js_val(run_param['SWVERSION'])
+    run_param = param["runtime_parameters"]
+    x_tool_version = js_val(run_param["SWVERSION"])
 
     log.info(f"Xilinx XCI (json) {loc} decares {module_name} (tool_verison {x_tool_version}, device {x_device})")
 
     direct_deps = []
     folder = loc.parent
+
     def append_direct_dep(f_str):
-        f_loc = folder/f_str
-        direct_deps.append(FileObjDirect(f_loc,ver=ver))
+        f_loc = folder / f_str
+        direct_deps.append(FileObjDirect(f_loc, ver=ver))
 
+    if "component_parameters" in param:
+        comp_param = param["component_parameters"]
+        # Check for coefficient file parameters (case-insensitive)
+        for key in comp_param.keys():
+            key_upper = key.upper()
+            if any(param in key_upper for param in ["COEFFICIENT_FILE", "COE_FILE", "COEFFILE"]):
+                coef_file = js_val(comp_param[key])
+                if coef_file is not None and len(coef_file.strip()) > 0:
 
-    if 'component_parameters' in param:
-        comp_param = param['component_parameters']
-        if 'Coefficient_File' in comp_param:
-            coe_file = js_val(comp_param['Coefficient_File'])
-            log.info(f"Xilinx XCI {loc} has a direct Coefficient_File dependency {coe_file}")
-            append_direct_dep(coe_file)
-        if 'Coe_File' in comp_param: #This statment has yet to be tested
-            coe_file = js_val(comp_param['Coe_File'])
-            log.info(f"Xilinx XCI {loc} has a direct Coe_File dependency {coe_file}")
-            append_direct_dep(coe_file)
+                    # Skip placeholder values (not actual files)
+                    # Check if it has a valid file extension (.coe, .mif, etc.)
+                    coef_path = Path(coef_file)
+                    if not coef_path.suffix or coef_path.suffix.lower() not in [".coe", ".mif"]:
+                        log.debug(f"Xilinx XCI (json) {loc} has placeholder coefficient parameter: '{coef_file}' - skipping")
+                        break
+
+                    coef_loc = path_abs_from_dir(folder, coef_path)
+                    if not coef_loc.is_file():
+                        log.warning(f"Coefficient file referenced in XCI {loc} not found: {coef_loc} - skipping")
+                        break
+
+                    log.info(f"Xilinx XCI (json) {loc} has coefficient file dependency: {coef_file}")
+                    append_direct_dep(coef_file)
+                    break  # Only extract one coefficient file
 
     f_obj = FileObjXXci(loc, ver, x_tool_version, x_device)
     f_obj.entities.append(name)
@@ -1327,7 +1476,8 @@ def parse_x_xci_file_json(look : Optional[Lookup], loc : Path, xci_f, ver : Opti
         f_obj.register_with_lookup(look)
     return f_obj
 
-def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjXXci:
+
+def parse_x_xci_file(look: Optional[Lookup], loc: Path, ver: Optional[str]) -> FileObjXXci:
     log.info(f"parsing Xilinx XCI file {loc}:")
     with open(loc, "rb") as xci_f:
         f_obj = parse_x_xci_file_json(look, loc, xci_f, ver)
@@ -1341,10 +1491,11 @@ def parse_x_xci_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -
     raise RuntimeError(f"Could not parse XCI as XML or JSON, {loc}")
 
 
-#}}}
+# }}}
 
-#Parse X_BD: Xilinx Block Digarm File {{{
-def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) -> FileObjXBd:
+
+# Parse X_BD: Xilinx Block Digarm File {{{
+def parse_x_bd_file(look: Optional[Lookup], loc: Path, ver: Optional[str]) -> FileObjXBd:
     log.info(f"parsing Xilinx BD file {loc}:")
     with open(loc, "rb") as json_f:
         bd_dict = json.load(json_f)
@@ -1358,33 +1509,33 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) ->
     name = Name(LIB_DEFAULT, module_name)
     f_obj.entities.append(name)
 
-    if 'components' in design_dict:
+    if "components" in design_dict:
         for component_name, component in design_dict["components"].items():
-            if 'reference_info' in component:
-                reference_info = component['reference_info']
-                if not 'ref_type' in reference_info:
+            if "reference_info" in component:
+                reference_info = component["reference_info"]
+                if not "ref_type" in reference_info:
                     continue
-                ref_type = reference_info['ref_type']
-                if ref_type != 'hdl':
+                ref_type = reference_info["ref_type"]
+                if ref_type != "hdl":
                     continue
-                ref_name = reference_info['ref_name']
-                log.debug(f'Xilinx BD {loc} requires {ref_name}')
+                ref_name = reference_info["ref_name"]
+                log.debug(f"Xilinx BD {loc} requires {ref_name}")
                 name = Name(LIB_DEFAULT, ref_name)
-                log.info(f'X_BD {loc} requires HDL instance {component_name} is {ref_name}')
+                log.info(f"X_BD {loc} requires HDL instance {component_name} is {ref_name}")
                 f_obj.entity_deps.append(name)
                 continue
-            if 'parameters' in component:
-                parameters = component['parameters']
-                if not 'ACTIVE_SYNTH_BD' in parameters:
+            if "parameters" in component:
+                parameters = component["parameters"]
+                if not "ACTIVE_SYNTH_BD" in parameters:
                     continue
-                active_synth_bd = parameters['ACTIVE_SYNTH_BD']
-                file_name = active_synth_bd['value']
-                s = file_name.split('.')
+                active_synth_bd = parameters["ACTIVE_SYNTH_BD"]
+                file_name = active_synth_bd["value"]
+                s = file_name.split(".")
                 assert len(s) == 2
-                assert s[1] == 'bd'
+                assert s[1] == "bd"
                 ref_name = s[0]
                 name = Name(LIB_DEFAULT, ref_name)
-                log.info(f'X_BD {loc} requsted BD instance {component_name} is {ref_name}')
+                log.info(f"X_BD {loc} requsted BD instance {component_name} is {ref_name}")
                 f_obj.entity_deps.append(name)
 
     if look is not None:
@@ -1392,22 +1543,24 @@ def parse_x_bd_file(look : Optional[Lookup], loc : Path, ver : Optional[str]) ->
     return f_obj
 
 
-
-#}}}
-
- # {{{ class FileLists
-@dataclass
-class FileLists:
-    vhdl    : Optional[List[Tuple[str, Path, str]]] = None
-    verilog : Optional[List[Tuple[Path, str]]] = None
-    other   : Optional[List[Tuple[Path, str]]] = None
-    x_bd    : Optional[List[Tuple[Path, str]]] = None
-    x_xci   : Optional[List[Tuple[Path, str]]] = None
-    direct  : Optional[List[str]] = None
-    tag_2_ext : Optional[dict[str, List[Path]]] = None
 # }}}
 
-class LookupSingular(Lookup): # {{{
+
+# {{{ class FileLists
+@dataclass
+class FileLists:
+    vhdl: Optional[List[Tuple[str, Path, str]]] = None
+    verilog: Optional[List[Tuple[Path, str]]] = None
+    other: Optional[List[Tuple[Path, str]]] = None
+    x_bd: Optional[List[Tuple[Path, str]]] = None
+    x_xci: Optional[List[Tuple[Path, str]]] = None
+    tag_2_ext: Optional[dict[str, List[Path]]] = None
+
+
+# }}}
+
+
+class LookupSingular(Lookup):  # {{{
 
     TOML_KEYS_OTHER = [
         "min_ver",
@@ -1442,23 +1595,23 @@ class LookupSingular(Lookup): # {{{
     VERSION = HDL_DEPENDS_VERSION_NUM
 
     def __init__(self, allow_duplicates: bool = True):
-        log.debug('LookupSingular::__init__')
+        log.debug("LookupSingular::__init__")
         super().__init__()
         self.version = LookupSingular.VERSION
         self.allow_duplicates = allow_duplicates
         self.package_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.entity_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.loc_2_file_obj: dict[Path, FileObjLookup] = {}
-        self.verilog_file_name_2_file_obj : dict[str, FileObjVerilog] = {}
+        self.verilog_file_name_2_file_obj: dict[str, FileObjVerilog] = {}
         self.ignore_set_libs: set[str] = set()
-        self.init_files : list[FileObj] = []
+        self.init_files: list[FileObj] = []
         self.ignore_set_packages: set[Name] = set()
         self.ignore_set_entities: set[Name] = set()
         self.toml_loc: Optional[Path] = None
-        self.toml_modification_time: Optional[float]= None
-        self.top_lib : Optional[str] = None
-        self.ignore_components : set[str] = set()
-        self.files_2_skip_from_order : set[Path] = set()
+        self.toml_modification_time: Optional[float] = None
+        self.top_lib: Optional[str] = None
+        self.ignore_components: set[str] = set()
+        self.files_2_skip_from_order: set[Path] = set()
         self.vhdl_file_list = None
         self.verilog_file_list = None
         self.other_file_list = None
@@ -1474,20 +1627,20 @@ class LookupSingular(Lookup): # {{{
         log.debug(f"LookupSingular.get_tag_2_ext_file called -> ret {self.tag_2_ext_file}")
         return self.tag_2_ext_file
 
-    def get_ext_files_for_tag(self, tag:str) -> List[Path]:
+    def get_ext_files_for_tag(self, tag: str) -> List[Path]:
         if tag in self.tag_2_ext_file:
             return self.tag_2_ext_file[tag]
         return []
 
     def _add_to_dict(self, d: dict, key, f_obj: FileObj):
-        log.info(f'Adding {key} to dict')
+        log.info(f"Adding {key} to dict")
         if key in d:
             if not self.allow_duplicates:
                 raise Exception(f"ERROR: tried to add {key} twice")
             item = d[key]
             conflict_obj = None
             if isinstance(item, FileObj):
-                conflict_obj = ConflictFileObj( [item, f_obj])
+                conflict_obj = ConflictFileObj([item, f_obj])
             elif isinstance(item, ConflictFileObj):
                 conflict_obj = item
                 conflict_obj.add_f_obj(f_obj)
@@ -1498,18 +1651,16 @@ class LookupSingular(Lookup): # {{{
 
     @staticmethod
     def toml_loc_to_pickle_loc(toml_loc: Path) -> Path:
-        pickle_loc = toml_loc.with_name('.' + toml_loc.stem + '.pickle')
+        pickle_loc = toml_loc.with_name("." + toml_loc.stem + ".pickle")
         return pickle_loc
 
     @staticmethod
-    def atempt_to_load_from_pickle(
-            pickle_loc: Path, toml_loc: Path, top_lib : Optional[str]
-    ) -> Tuple[Optional[Lookup], FileLists]:
+    def atempt_to_load_from_pickle(pickle_loc: Path, toml_loc: Path, top_lib: Optional[str]) -> Tuple[Optional[Lookup], FileLists]:
         file_lists = FileLists()
 
         assert toml_loc.is_file()
         if not pickle_loc.is_file():
-            log.debug('will not load from pickle no file at {pickle_loc}')
+            log.debug("will not load from pickle no file at {pickle_loc}")
             return None, file_lists
         log.info(f"atempting to load cache from {pickle_loc}")
         pickle_mod_time = get_file_modification_time(pickle_loc)
@@ -1518,7 +1669,7 @@ class LookupSingular(Lookup): # {{{
             inst = pickle.load(pickle_f)
 
         if LookupSingular.VERSION != inst.version:
-            log.info(f'hdldepends version { LookupSingular.VERSION} but pickle top_lib {inst.version} will not load from pickle')
+            log.info(f"hdldepends version { LookupSingular.VERSION} but pickle top_lib {inst.version} will not load from pickle")
             return None, file_lists
 
         toml_modification_time = get_file_modification_time(toml_loc)
@@ -1527,58 +1678,45 @@ class LookupSingular(Lookup): # {{{
             return None, file_lists
 
         if top_lib != inst.top_lib:
-            log.info(f'requested top_lib {top_lib} but pickle top_lib {inst.top_lib} will not load from pickle')
+            log.info(f"requested top_lib {top_lib} but pickle top_lib {inst.top_lib} will not load from pickle")
             return None, file_lists
 
         config = load_config(toml_loc)
 
-        file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(
-            config, toml_loc.parent, top_lib
-        )
+        file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(config, toml_loc.parent, top_lib)
         if file_lists.vhdl != inst.vhdl_file_list:
-            log.info(f'Will not load from pickle as vhdl_file_list has changed')
+            log.info(f"Will not load from pickle as vhdl_file_list has changed")
             return None, file_lists
 
-        file_lists.verilog = LookupSingular.get_verilog_file_list_from_config_dict(
-            config, toml_loc.parent, top_lib
-        )
+        file_lists.verilog = LookupSingular.get_verilog_file_list_from_config_dict(config, toml_loc.parent, top_lib)
         if file_lists.verilog != inst.verilog_file_list:
-            log.info(f'Will not load from pickle as verilog_file_list has changed')
+            log.info(f"Will not load from pickle as verilog_file_list has changed")
             return None, file_lists
 
-        file_lists.other = LookupSingular.get_other_file_list_from_config_dict(
-            config, toml_loc.parent, top_lib=top_lib
-        )
+        file_lists.other = LookupSingular.get_other_file_list_from_config_dict(config, toml_loc.parent, top_lib=top_lib)
 
         if file_lists.other != inst.other_file_list:
-            log.info(f'Will not load from pickle as other_file_list has changed')
+            log.info(f"Will not load from pickle as other_file_list has changed")
             return None, file_lists
 
-        file_lists.x_bd = LookupSingular.get_x_bd_file_list_from_config_dict(
-            config, toml_loc.parent, top_lib=top_lib
-        )
+        file_lists.x_bd = LookupSingular.get_x_bd_file_list_from_config_dict(config, toml_loc.parent, top_lib=top_lib)
 
         if file_lists.x_bd != inst.x_bd_file_list:
-            log.info(f'Will not load from pickle as x_bd_file_list has changed')
+            log.info(f"Will not load from pickle as x_bd_file_list has changed")
             return None, file_lists
 
-        file_lists.x_xci = LookupSingular.get_x_xci_file_list_from_config_dict(
-            config, toml_loc.parent, top_lib=top_lib
-        )
+        file_lists.x_xci = LookupSingular.get_x_xci_file_list_from_config_dict(config, toml_loc.parent, top_lib=top_lib)
 
         if file_lists.x_xci != inst.x_xci_file_list:
-            log.info(f'Will not load from pickle as x_xci_file_list has changed')
+            log.info(f"Will not load from pickle as x_xci_file_list has changed")
             return None, file_lists
 
-        ext_file_list = LookupSingular.get_ext_file_list_from_config_dict(
-            config, toml_loc.parent, top_lib=top_lib
-        )
-        log.debug(f'New ext_file_list {ext_file_list}')
+        ext_file_list = LookupSingular.get_ext_file_list_from_config_dict(config, toml_loc.parent, top_lib=top_lib)
+        log.debug(f"New ext_file_list {ext_file_list}")
         file_lists.tag_2_ext = LookupSingular.ext_file_list_2_dict(ext_file_list)
 
-
         if file_lists.tag_2_ext != inst.tag_2_ext_file:
-            log.info(f'Will not load from pickle as ext_file_list has changed')
+            log.info(f"Will not load from pickle as ext_file_list has changed")
             return None, file_lists
 
         log.info(f"loaded from {pickle_loc}, updating required files")
@@ -1610,25 +1748,13 @@ class LookupSingular(Lookup): # {{{
             for f_obj in f_objs:
                 dependency_changes, changes = f_obj.update()
 
-                for d_obj in f_obj.direct_deps:
-                    try: 
-                        new_mod = d_obj.get_modification_time_on_disk()
-                    except FileNotFoundError:
-                        new_mod = None
-
-                    if d_obj.modification_time != new_mod:
-                        d_obj.update_modification_time()
-                        log.info(f"{d_obj.loc} modification time has changed from saved in pickle")
-                        any_changes = True
-
-
                 if dependency_changes:
                     compile_order_out_of_date = True
                 if changes:
                     any_changes = True
 
         if compile_order_out_of_date:
-            log.info('Compile order has change')
+            log.info("Compile order has change")
             # brute force update of dict because resolving a conflict is annoying
             self.package_name_2_file_obj = {}
             self.entity_name_2_file_obj = {}
@@ -1640,11 +1766,12 @@ class LookupSingular(Lookup): # {{{
         return any_changes
 
     @staticmethod
-    def _process_config_opt_lib(config: dict, key: str, callback, with_ver : bool, top_lib : Optional[str]):
+    def _process_config_opt_lib(config: dict, key: str, callback, with_ver: bool, top_lib: Optional[str]):
         if top_lib is None:
             top_lib = LIB_DEFAULT
 
         ver = None
+
         def cb(lib, val, ver):
             if with_ver:
                 callback(lib, val, ver)
@@ -1674,10 +1801,11 @@ class LookupSingular(Lookup): # {{{
                     cb(top_lib, v, ver)
             else:
                 cb(top_lib, c_val, ver)
+
     @staticmethod
-    def _extract_init_files_from_config(config: dict, work_dir : Path) -> List[FileObj]:
-        config_key = 'init_files'
-        init_files : List[FileObj] = []
+    def _extract_init_files_from_config(config: dict, work_dir: Path) -> List[FileObj]:
+        config_key = "init_files"
+        init_files: List[FileObj] = []
         if config_key not in config.keys():
             return init_files
 
@@ -1688,7 +1816,7 @@ class LookupSingular(Lookup): # {{{
         for config_init_f in config_init_files:
             if not isinstance(config_init_f, list):
                 raise Exception(f"config file key {config_key} must contain a list of lists, got list of {type(config_init_f)}")
-            loc_str    = config_init_f[0]
+            loc_str = config_init_f[0]
             f_type_str = config_init_f[1]
             ver_tag = None
             lib = LIB_DEFAULT
@@ -1701,7 +1829,9 @@ class LookupSingular(Lookup): # {{{
                 if len(lib) == 0:
                     lib_tag = None
             if len(config_init_f) > 4:
-                raise Exception(f"config file key {config_key} must contain a list of lias containing [loc, f_type, ver_tag, lib] but got a len of {len(config_init_f)}")
+                raise Exception(
+                    f"config file key {config_key} must contain a list of lias containing [loc, f_type, ver_tag, lib] but got a len of {len(config_init_f)}"
+                )
 
             loc = path_abs_from_dir(work_dir, Path(loc_str))
 
@@ -1728,17 +1858,14 @@ class LookupSingular(Lookup): # {{{
                     raise Exception(f"config file key {config_key}. does not surrot file type Xilinx IP (.xci)")
                 case FileObjType.DIRECT:
                     raise Exception(f"config file key {config_key}. does not surrot file type direct")
-            #init_files are just added outside of the worked out compile order so they do not have a level
+            # init_files are just added outside of the worked out compile order so they do not have a level
             file_obj.level = 0
 
             init_files.append(file_obj)
         return init_files
 
-
     @staticmethod
-    def extract_set_str_from_config(
-        config: dict, key: str
-    ) -> Set[str]:
+    def extract_set_str_from_config(config: dict, key: str) -> Set[str]:
         if key not in config:
             return set()
         val = config[key]
@@ -1747,74 +1874,56 @@ class LookupSingular(Lookup): # {{{
         return result
 
     @staticmethod
-    def extract_set_name_from_config(
-            config: dict, key: str, top_lib : Optional[str]
-    ) -> Set[Name]:
+    def extract_set_name_from_config(config: dict, key: str, top_lib: Optional[str]) -> Set[Name]:
         l = []
 
         def call_back_func(lib: str, name: str):
             l.append(Name(lib=lib, name=name))
 
-        LookupSingular._process_config_opt_lib(config, key, with_ver=False, callback=call_back_func,top_lib=top_lib)
+        LookupSingular._process_config_opt_lib(config, key, with_ver=False, callback=call_back_func, top_lib=top_lib)
         log.info(f"{key} = {l}")
         return set(l)
 
-    def initalise_from_config_dict(self, config: dict, work_dir : Path, top_lib : Optional[str], file_lists:Optional[FileLists], add_std_pkg_ignore=True):
+    def initalise_from_config_dict(
+        self, config: dict, work_dir: Path, top_lib: Optional[str], file_lists: Optional[FileLists], add_std_pkg_ignore=True
+    ):
 
         if file_lists is None:
             file_lists = FileLists()
 
-        if 'top_lib' in config:
-            self.top_lib = config['top_lib']
-        self.ignore_set_libs = LookupSingular.extract_set_str_from_config(
-            config, "ignore_libs"
-        )
+        if "top_lib" in config:
+            self.top_lib = config["top_lib"]
+        self.ignore_set_libs = LookupSingular.extract_set_str_from_config(config, "ignore_libs")
 
         self.init_files = LookupSingular._extract_init_files_from_config(config, work_dir)
 
         if add_std_pkg_ignore:
-            self.ignore_set_libs.add('ieee')
-            self.ignore_set_libs.add('std')
+            self.ignore_set_libs.add("ieee")
+            self.ignore_set_libs.add("std")
 
-        self.ignore_set_packages = LookupSingular.extract_set_name_from_config(
-            config, "ignore_packages", top_lib=top_lib
-        )
-        self.ignore_set_entities = LookupSingular.extract_set_name_from_config(
-            config, "ignore_entities", top_lib=top_lib
-        )
-        if 'ignore_components' in config:
-            self.ignore_components = make_set(config['ignore_components'])
+        self.ignore_set_packages = LookupSingular.extract_set_name_from_config(config, "ignore_packages", top_lib=top_lib)
+        self.ignore_set_entities = LookupSingular.extract_set_name_from_config(config, "ignore_entities", top_lib=top_lib)
+        if "ignore_components" in config:
+            self.ignore_components = make_set(config["ignore_components"])
 
         if file_lists.vhdl is None:
-            file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(
-                config, work_dir, top_lib
-            )
+            file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(config, work_dir, top_lib)
 
         if file_lists.verilog is None:
-            file_lists.verilog = LookupSingular.get_verilog_file_list_from_config_dict(
-                config, work_dir, top_lib=top_lib
-            )
+            file_lists.verilog = LookupSingular.get_verilog_file_list_from_config_dict(config, work_dir, top_lib=top_lib)
 
         if file_lists.other is None:
-            file_lists.other = LookupSingular.get_other_file_list_from_config_dict(
-                config, work_dir, top_lib=top_lib
-            )
+            file_lists.other = LookupSingular.get_other_file_list_from_config_dict(config, work_dir, top_lib=top_lib)
 
         if file_lists.x_bd is None:
-            file_lists.x_bd = LookupSingular.get_x_bd_file_list_from_config_dict(
-                config, work_dir, top_lib=top_lib
-            )
+            file_lists.x_bd = LookupSingular.get_x_bd_file_list_from_config_dict(config, work_dir, top_lib=top_lib)
 
         if file_lists.x_xci is None:
-            file_lists.x_xci = LookupSingular.get_x_xci_file_list_from_config_dict(
-                config, work_dir, top_lib=top_lib
-            )
+            file_lists.x_xci = LookupSingular.get_x_xci_file_list_from_config_dict(config, work_dir, top_lib=top_lib)
 
         if file_lists.tag_2_ext is None:
-            ext_file_list = LookupSingular.get_ext_file_list_from_config_dict(
-                config, work_dir, top_lib=top_lib
-            )
-            log.debug(f'loaded ext_file_list {ext_file_list}')
+            ext_file_list = LookupSingular.get_ext_file_list_from_config_dict(config, work_dir, top_lib=top_lib)
+            log.debug(f"loaded ext_file_list {ext_file_list}")
             file_lists.tag_2_ext = LookupSingular.ext_file_list_2_dict(ext_file_list)
 
         def add_file_to_list_skip_order(lib, loc_str):
@@ -1827,7 +1936,7 @@ class LookupSingular(Lookup): # {{{
 
         self.register_file_lists(file_lists)
 
-    def register_file_lists(self, file_lists:FileLists):
+    def register_file_lists(self, file_lists: FileLists):
         assert file_lists.vhdl is not None
         assert file_lists.verilog is not None
         assert file_lists.other is not None
@@ -1842,16 +1951,16 @@ class LookupSingular(Lookup): # {{{
         self.register_ext_file_list(file_lists.tag_2_ext)
 
     @staticmethod
-    def get_common_file_list_from_config_dict(common_tag : str, config: dict, work_dir: Path, top_lib : Optional[str]) -> List[Tuple[str, Path, str]]:
+    def get_common_file_list_from_config_dict(common_tag: str, config: dict, work_dir: Path, top_lib: Optional[str]) -> List[Tuple[str, Path, str]]:
         common_file_list = []
 
         def add_file_to_list(lib, loc_str, ver):
             loc = path_abs_from_dir(work_dir, Path(loc_str))
             common_file_list.append((lib, loc, ver))
 
-        LookupSingular._process_config_opt_lib(config, common_tag+"_files", with_ver=True, callback=add_file_to_list, top_lib=top_lib)
+        LookupSingular._process_config_opt_lib(config, common_tag + "_files", with_ver=True, callback=add_file_to_list, top_lib=top_lib)
 
-        def add_file_list_to_list(lib, f_str,ver):
+        def add_file_list_to_list(lib, f_str, ver):
             fl_loc = Path(f_str)
             fl_loc = path_abs_from_dir(work_dir, fl_loc)
             with open(fl_loc, "r") as f_list_file:
@@ -1860,21 +1969,18 @@ class LookupSingular(Lookup): # {{{
                     loc = path_abs_from_dir(fl_loc.parents[0], Path(loc_str))
                     common_file_list.append((lib, loc, ver))
 
-        LookupSingular._process_config_opt_lib(
-            config, common_tag+"_files_file", with_ver=True, callback=add_file_list_to_list, top_lib=top_lib
-        )
+        LookupSingular._process_config_opt_lib(config, common_tag + "_files_file", with_ver=True, callback=add_file_list_to_list, top_lib=top_lib)
 
         glob_dict = {}
+
         def add_to_glob_str_dict(lib, glob_str, ver):
             if lib not in glob_dict:
                 glob_dict[lib] = {}
             if ver not in glob_dict[lib]:
-                glob_dict[lib][ver]=[]
+                glob_dict[lib][ver] = []
             glob_dict[lib][ver].append(glob_str)
 
-        LookupSingular._process_config_opt_lib(
-            config, common_tag+"_files_glob", with_ver=True, callback=add_to_glob_str_dict, top_lib=top_lib
-        )
+        LookupSingular._process_config_opt_lib(config, common_tag + "_files_glob", with_ver=True, callback=add_to_glob_str_dict, top_lib=top_lib)
 
         for lib, glob_ver_dict in glob_dict.items():
             for ver, glob_str_list in glob_ver_dict.items():
@@ -1886,20 +1992,20 @@ class LookupSingular(Lookup): # {{{
         return common_file_list
 
     @staticmethod
-    def get_common_file_list_from_config_dict_force_default_lib(common_tag : str, config: dict, work_dir: Path, top_lib : Optional[str]):
+    def get_common_file_list_from_config_dict_force_default_lib(common_tag: str, config: dict, work_dir: Path, top_lib: Optional[str]):
 
         common_file_list = LookupSingular.get_common_file_list_from_config_dict(common_tag, config, work_dir, top_lib)
 
         for lib, loc, ver in common_file_list:
             if lib != LIB_DEFAULT:
-                log.error(f'Files types not VHDL must have default library {LIB_DEFAULT} got library {lib} on file {loc} (ver {ver})')
+                log.error(f"Files types not VHDL must have default library {LIB_DEFAULT} got library {lib} on file {loc} (ver {ver})")
 
         return [(loc, ver) for _, loc, ver in common_file_list]
 
     @staticmethod
-    def get_vhdl_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
-        log.debug(f'called get_vhdl_file_list_from_config_dict( top_lib={top_lib} )')
-        vhdl_file_list = LookupSingular.get_common_file_list_from_config_dict('vhdl', config, work_dir, top_lib)
+    def get_vhdl_file_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
+        log.debug(f"called get_vhdl_file_list_from_config_dict( top_lib={top_lib} )")
+        vhdl_file_list = LookupSingular.get_common_file_list_from_config_dict("vhdl", config, work_dir, top_lib)
 
         def add_file_to_list_skip_order(lib, loc_str, ver):
             loc = path_abs_from_dir(work_dir, Path(loc_str))
@@ -1912,30 +2018,30 @@ class LookupSingular(Lookup): # {{{
         return vhdl_file_list
 
     @staticmethod
-    def get_verilog_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
-        log.debug(f'called get_verilog_file_list_from_config_dict( top_lib={top_lib} )')
-        return LookupSingular.get_common_file_list_from_config_dict_force_default_lib('verilog', config, work_dir, top_lib)
+    def get_verilog_file_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
+        log.debug(f"called get_verilog_file_list_from_config_dict( top_lib={top_lib} )")
+        return LookupSingular.get_common_file_list_from_config_dict_force_default_lib("verilog", config, work_dir, top_lib)
 
     @staticmethod
-    def get_other_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
-        return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('other', config, work_dir, top_lib)
+    def get_other_file_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
+        return LookupSingular.get_common_file_list_from_config_dict_force_default_lib("other", config, work_dir, top_lib)
 
     @staticmethod
-    def get_x_bd_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
-        return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('x_bd', config, work_dir, top_lib)
+    def get_x_bd_file_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
+        return LookupSingular.get_common_file_list_from_config_dict_force_default_lib("x_bd", config, work_dir, top_lib)
 
     @staticmethod
-    def get_x_xci_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
-        return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('x_xci', config, work_dir, top_lib)
+    def get_x_xci_file_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
+        return LookupSingular.get_common_file_list_from_config_dict_force_default_lib("x_xci", config, work_dir, top_lib)
 
     @staticmethod
-    def get_ext_file_list_from_config_dict(config: dict, work_dir: Path, top_lib : Optional[str]):
-        return  LookupSingular.get_common_file_list_from_config_dict_force_default_lib('ext', config, work_dir, top_lib)
+    def get_ext_file_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
+        return LookupSingular.get_common_file_list_from_config_dict_force_default_lib("ext", config, work_dir, top_lib)
 
-    def check_if_skip_from_order(self, loc:Path):
+    def check_if_skip_from_order(self, loc: Path):
         return loc in self.files_2_skip_from_order
 
-    def register_other_file_list(self, other_file_list : List[Tuple[Path, str]]):
+    def register_other_file_list(self, other_file_list: List[Tuple[Path, str]]):
         self.other_file_list = other_file_list
         for loc, ver in other_file_list:
 
@@ -1945,28 +2051,28 @@ class LookupSingular(Lookup): # {{{
             self.entity_name_2_file_obj[entity_name] = f_obj
             self.loc_2_file_obj[loc] = f_obj
 
-    def register_x_bd_file_list(self, x_bd_file_list : List[Tuple[Path, str]]):
+    def register_x_bd_file_list(self, x_bd_file_list: List[Tuple[Path, str]]):
         self.x_bd_file_list = x_bd_file_list
         for loc, ver in x_bd_file_list:
-            parse_x_bd_file(self, loc, ver);
+            f_obj = parse_x_bd_file(self, loc, ver)
 
-    def register_x_xci_file_list(self, x_xci_file_list : List[Tuple[Path, str]]):
+    def register_x_xci_file_list(self, x_xci_file_list: List[Tuple[Path, str]]):
         self.x_xci_file_list = x_xci_file_list
         for loc, ver in x_xci_file_list:
-            parse_x_xci_file(self, loc, ver);
+            f_obj = parse_x_xci_file(self, loc, ver)
 
-    def register_vhdl_file_list(self, vhdl_file_list : List[Tuple[str, Path, str]]):
+    def register_vhdl_file_list(self, vhdl_file_list: List[Tuple[str, Path, str]]):
         self.vhdl_file_list = vhdl_file_list
         for lib, loc, ver in vhdl_file_list:
             parse_vhdl_file(self, loc, lib=lib, ver=ver)
 
-    def register_verilog_file_list(self, verilog_file_list : List[Tuple[Path, str]]):
+    def register_verilog_file_list(self, verilog_file_list: List[Tuple[Path, str]]):
         self.verilog_file_list = verilog_file_list
         for loc, ver in verilog_file_list:
             parse_verilog_file(self, loc, ver=ver)
 
     @staticmethod
-    def ext_file_list_2_dict(ext_file_list : List[Tuple[Path, str]]) -> dict[str, List[Path]]:
+    def ext_file_list_2_dict(ext_file_list: List[Tuple[Path, str]]) -> dict[str, List[Path]]:
         tag_2_ext_file = {}
         for loc, ver in ext_file_list:
             if ver not in tag_2_ext_file:
@@ -1974,7 +2080,7 @@ class LookupSingular(Lookup): # {{{
             tag_2_ext_file[ver].append(loc)
         return tag_2_ext_file
 
-    def register_ext_file_list(self, tag_2_ext_file : dict[str, List[Path]]):
+    def register_ext_file_list(self, tag_2_ext_file: dict[str, List[Path]]):
         self.tag_2_ext_file = tag_2_ext_file
 
     @staticmethod
@@ -1983,7 +2089,6 @@ class LookupSingular(Lookup): # {{{
         inst = LookupSingular()
         inst.initalise_from_config_dict(config, work_dir, **kwargs)
         return inst
-
 
     def add_vhdl_package(self, name: Name, f_obj: FileObjVhdl):
         self._add_to_dict(self.package_name_2_file_obj, name, f_obj)
@@ -1995,7 +2100,7 @@ class LookupSingular(Lookup): # {{{
         loc = resolve_abs_path(loc)
         self._add_to_dict(self.loc_2_file_obj, loc, f_obj)
 
-    def add_verilog_file_name(self, file_name: str, f_obj : FileObjVerilog):
+    def add_verilog_file_name(self, file_name: str, f_obj: FileObjVerilog):
         self._add_to_dict(self.verilog_file_name_2_file_obj, file_name, f_obj)
 
     def get_loc(self, loc: Path):
@@ -2006,8 +2111,8 @@ class LookupSingular(Lookup): # {{{
         loc = resolve_abs_path(loc)
         return loc in self.loc_2_file_obj
 
-    def get_vhdl_package(self, name: Name, f_obj_required_by : Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
-        loc_str = 'None'
+    def get_vhdl_package(self, name: Name, f_obj_required_by: Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
+        loc_str = "None"
         if f_obj_required_by is not None:
             loc_str = str(f_obj_required_by.loc)
         if name not in self.package_name_2_file_obj:
@@ -2019,14 +2124,14 @@ class LookupSingular(Lookup): # {{{
 
         item = self.package_name_2_file_obj[name]
         if isinstance(item, FileObj):
-            assert isinstance(item,FileObjVhdl)
+            assert isinstance(item, FileObjVhdl)
             return item
         elif isinstance(item, ConflictFileObj):
             item.log_confict(name)
             raise KeyError(f"ERROR: confict on package {name} required by {loc_str}")
 
-    def get_entity(self, name: Name, f_obj_required_by : Optional[FileObj], ignore_lib=False) -> Optional[FileObj]:
-        loc_str = 'None'
+    def get_entity(self, name: Name, f_obj_required_by: Optional[FileObj], ignore_lib=False) -> Optional[FileObj]:
+        loc_str = "None"
         if f_obj_required_by is not None:
             loc_str = str(f_obj_required_by.loc)
 
@@ -2042,8 +2147,22 @@ class LookupSingular(Lookup): # {{{
                         item = v
                         break
             if item is None:
-                raise KeyError(f"ERROR: Could not find entity {name} required by {loc_str}, {ignore_lib=}")
+                # Special case: Search for X files (XCI/BD) by name only, ignoring library
+                # This is needed because X files are defined in 'work' but may be instantiated
+                # from other libraries
+                x_result = self._get_x_entity_by_name_only(name.name, f_obj_required_by)
+                if x_result is not None:
+                    matched_f_obj, all_matches = x_result
+                    if len(all_matches) > 1:
+                        # Multiple X files with same name
+                        match_info = ", ".join([f"{f.loc} ({f.x_device if hasattr(f, 'x_device') else 'no device'})" for f in all_matches])
+                        raise KeyError(
+                            f"ERROR: Ambiguous entity {name} required by {loc_str}. " f"Found multiple X files with this name: {match_info}. "
+                        )
+                    log.info(f"Found X file {matched_f_obj.loc} for entity {name} by ignoring library ")
+                    return matched_f_obj
 
+                raise KeyError(f"ERROR: Could not find entity {name} required by {loc_str}, {ignore_lib=}")
 
         if item is None:
             item = self.entity_name_2_file_obj[name]
@@ -2056,70 +2175,117 @@ class LookupSingular(Lookup): # {{{
             item.log_confict(name)
             raise KeyError(f"ERROR: confict on entity {name} required by {loc_str}, {ignore_lib=}")
 
+    def _get_x_entity_by_name_only(self, name: str, f_obj_required_by: Optional[FileObj]) -> Optional[Tuple[FileObj, List[FileObj]]]:
+        """
+        Search for X files (XCI/BD) by name only, ignoring library.
+        Returns (file_obj, all_matches) or None if no X files found.
+
+        This is needed because Xilinx IP cores are defined in 'work' but may be
+        instantiated from other libraries
+
+        Only returns X files that match the project's x_tool_version and x_device requirements.
+        """
+        matches = []
+
+        for entity_name, item in self.entity_name_2_file_obj.items():
+            # Only check if the entity name matches
+            if entity_name.name != name:
+                continue
+
+            # Get the file object(s)
+            f_objs = []
+            if isinstance(item, FileObj):
+                f_objs = [item]
+            elif isinstance(item, ConflictFileObj):
+                f_objs = list(item.get_f_objs())
+
+            # Filter to only X files (XCI or BD) that match requirements
+            for f_obj in f_objs:
+                # Only consider X files (XCI/BD)
+                if not isinstance(f_obj, FileObjX):
+                    continue
+
+                # Check if this X file matches the project requirements
+                if self.x_tool_version and self.x_device:
+                    if not f_obj.matches_x_requirements(self.x_tool_version, self.x_device):
+                        log.debug(
+                            f"Skipping X file {f_obj.loc} in library-agnostic search - "
+                            f"doesn't match requirements (file: {f_obj.x_tool_version}/{f_obj.x_device}, "
+                            f"required: {self.x_tool_version}/{self.x_device})"
+                        )
+                        continue
+                matches.append(f_obj)
+
+        if len(matches) == 0:
+            return None
+
+        # Return first match and all matches for conflict detection
+        return (matches[0], matches)
+
     def get_top_lib(self):
         return self.top_lib
 
-    def set_top_lib(self, top_lib : Optional[str] = None):
+    def set_top_lib(self, top_lib: Optional[str] = None):
         self.top_lib = top_lib
 
-    def get_file_list(self, lib:Optional[str]=None):
+    def get_file_list(self, lib: Optional[str] = None):
         file_list = []
         for f_obj in self.loc_2_file_obj.values():
             assert not isinstance(f_obj, ConflictFileObj)
             if f_obj.loc in self.files_2_skip_from_order:
-                continue #skip
+                continue  # skip
             if lib is None or lib == f_obj.lib:
                 file_list.append(f_obj)
         return file_list
 
-    def write_file_list(self, f_loc, f_type : Optional[FileObjType]=None, lib : Optional[str] = None):
+    def write_file_list(self, f_loc, f_type: Optional[FileObjType] = None, lib: Optional[str] = None):
         file_list = self.get_file_list(lib=lib)
-        with open(f_loc, 'w') as f:
+        with open(f_loc, "w") as f:
             for f_obj in file_list:
                 if f_type is not None:
                     if f_obj.f_type != f_type:
                         continue
                 if lib is None:
-                    f.write(f'{f_obj.lib}\t{f_obj.loc}\n')
+                    f.write(f"{f_obj.lib}\t{f_obj.loc}\n")
                 else:
-                    f.write(str(f_obj.loc)+'\n')
+                    f.write(str(f_obj.loc) + "\n")
 
-    def write_ext_file_list(self, f_loc : Path, ver_tag : Optional[str] = None):
-        log.debug(f'Called write_ext_file_list(f_loc = {f_loc}, ver_tag = {ver_tag})')
-        log.debug(f'self {self}')
-        with open(f_loc, 'w') as f:
+    def write_ext_file_list(self, f_loc: Path, ver_tag: Optional[str] = None):
+        log.debug(f"Called write_ext_file_list(f_loc = {f_loc}, ver_tag = {ver_tag})")
+        log.debug(f"self {self}")
+        with open(f_loc, "w") as f:
             if ver_tag is None:
                 tag_2_ext = self.get_tag_2_ext_file()
                 for ver_tag, ext_l in tag_2_ext.items():
                     for ext in ext_l:
-                        f.write(f'{ver_tag}\t{ext}\n')
+                        f.write(f"{ver_tag}\t{ext}\n")
             else:
                 ext_l = self.get_ext_files_for_tag(ver_tag)
                 for ext in ext_l:
-                    f.write(f'{ext}\n')
+                    f.write(f"{ext}\n")
 
 
-#}}}
+# }}}
+
 
 class LookupMulti(LookupSingular):  # {{{
     TOML_KEYS_OTHER = ["sub"]
     TOML_KEYS_OPT_VER = []
 
-    def __init__(
-            self, look_subs: List[LookupSingular]): #, file_list: List[Tuple[str, Path]] = [] ):
-        log.debug('LookupMulti::__init__')
+    def __init__(self, look_subs: List[LookupSingular]):  # , file_list: List[Tuple[str, Path]] = [] ):
+        log.debug("LookupMulti::__init__")
         self.look_subs = look_subs
         super().__init__(allow_duplicates=True)
         self.f_obj_top = None
         self._compile_order = None
 
-    def set_x_tool_version(self, x_tool_version : str):
+    def set_x_tool_version(self, x_tool_version: str):
         for sub in self.look_subs:
             sub.set_x_tool_version(x_tool_version)
         Lookup.set_x_tool_version(self, x_tool_version)
 
-    def set_x_device(self, x_device : str):
-        log.debug(f'LookupMulti::set_x_device({x_device})')
+    def set_x_device(self, x_device: str):
+        log.debug(f"LookupMulti::set_x_device({x_device})")
         for sub in self.look_subs:
             sub.set_x_device(x_device)
         Lookup.set_x_device(self, x_device)
@@ -2127,7 +2293,7 @@ class LookupMulti(LookupSingular):  # {{{
     def get_init_files(self) -> List[FileObj]:
         f_l = []
         for sub in self.look_subs:
-            f_l.extend( LookupSingular.get_init_files(sub))
+            f_l.extend(LookupSingular.get_init_files(sub))
         # put he look_subs before current instance
         f_l.extend(LookupSingular.get_init_files(self))
         return f_l
@@ -2143,50 +2309,52 @@ class LookupMulti(LookupSingular):  # {{{
                     tag_2_ext[tag] = f_l
         return tag_2_ext
 
-    def get_ext_files_for_tag(self, tag:str) -> List[Path]:
-        f_l = LookupSingular.get_ext_files_for_tag(self,tag)
+    def get_ext_files_for_tag(self, tag: str) -> List[Path]:
+        f_l = LookupSingular.get_ext_files_for_tag(self, tag)
         for sub in self.look_subs:
-            f_l.extend( LookupSingular.get_ext_files_for_tag(sub,tag))
+            f_l.extend(LookupSingular.get_ext_files_for_tag(sub, tag))
         return f_l
 
     @staticmethod
-    def create_from_config_dict(
-            config: dict, work_dir: Path, look_subs=[], **kwargs
-    ):
+    def create_from_config_dict(config: dict, work_dir: Path, look_subs=[], **kwargs):
 
         look = LookupMulti(look_subs)
         look.initalise_from_config_dict(config, work_dir, **kwargs)
         return look
 
-    def register_vhdl_file_list(self, vhdl_file_list:List[Tuple[str,Path,str]]):
+    def register_vhdl_file_list(self, vhdl_file_list: List[Tuple[str, Path, str]]):
         self.vhdl_file_list = vhdl_file_list
         for lib, loc, ver in vhdl_file_list:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is not None:
                 if f_obj.lib != lib:
-                    raise RuntimeError(f'Double library error {f_obj.lib} != {lib}. Check if file has been added twice with different libraries')
+                    raise RuntimeError(f"Double library error {f_obj.lib} != {lib}. Check if file has been added twice with different libraries")
                 if f_obj.ver != ver:
-                    raise RuntimeError(f'Double version error {f_obj.ver} != {ver}. Check if file has been added twice with different versions')
+                    raise RuntimeError(f"Double version error {f_obj.ver} != {ver}. Check if file has been added twice with different versions")
                 f_obj.register_with_lookup(self)
             else:
                 # not passed in common lookup pass in prj lookup
                 f_obj = parse_vhdl_file(self, loc, lib=lib, ver=ver)
 
-    def register_verilog_file_list(self, verilog_file_list:List):
-        log.debug(f'register_verilog_file_list({verilog_file_list=}) called')
+    def register_verilog_file_list(self, verilog_file_list: List):
+        log.debug(f"register_verilog_file_list({verilog_file_list=}) called")
         self.verilog_file_list = verilog_file_list
         for loc, ver in verilog_file_list:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is not None:
                 f_obj.register_with_lookup(self)
-                assert(f_obj.ver == ver)
+                assert f_obj.ver == ver
             else:
                 f_obj = parse_verilog_file(self, loc, ver)
 
-
-
-    def get_loc(self, loc: Path, type_to_add_to_if_not_found : Optional[FileObjType]=None, lib_to_add_to_if_not_found: str = LIB_DEFAULT, ver_to_add_to_if_not_found=None):
-    # def get_loc(self, loc: Path, lib_to_add_to_if_not_found: Optional[str] = None):
+    def get_loc(
+        self,
+        loc: Path,
+        type_to_add_to_if_not_found: Optional[FileObjType] = None,
+        lib_to_add_to_if_not_found: str = LIB_DEFAULT,
+        ver_to_add_to_if_not_found=None,
+    ):
+        # def get_loc(self, loc: Path, lib_to_add_to_if_not_found: Optional[str] = None):
         try:
             return super().get_loc(loc)
         except KeyError:
@@ -2209,7 +2377,7 @@ class LookupMulti(LookupSingular):  # {{{
                 if type_to_add_to_if_not_found is not None:
                     ver = ver_to_add_to_if_not_found
                     if type_to_add_to_if_not_found is FileObjType.VHDL:
-                        f_obj = parse_vhdl_file( self, loc, lib=lib_to_add_to_if_not_found, ver=ver)
+                        f_obj = parse_vhdl_file(self, loc, lib=lib_to_add_to_if_not_found, ver=ver)
                     elif type_to_add_to_if_not_found is FileObjType.VERILOG:
                         f_obj = parse_verilog_file(self, loc, ver)
                     elif type_to_add_to_if_not_found is FileObjType.X_BD:
@@ -2217,11 +2385,10 @@ class LookupMulti(LookupSingular):  # {{{
                     elif type_to_add_to_if_not_found is FileObjType.X_XCI:
                         f_obj = parse_x_xci_file(self, loc, ver)
                     else:
-                        raise TypeError(f'Unexpected top level file type:{type_to_add_to_if_not_found}')
+                        raise TypeError(f"Unexpected top level file type:{type_to_add_to_if_not_found}")
                 else:
                     raise KeyError(f"file {loc} not found in dependency lookups")
             return f_obj
-
 
     def _get_loc_from_common(self, loc: Path) -> Optional[FileObj]:
         for l_common in self.look_subs:
@@ -2230,8 +2397,8 @@ class LookupMulti(LookupSingular):  # {{{
                 assert isinstance(f_obj, FileObj)
         return None
 
-    def check_if_skip_from_order(self, loc:Path):
-        if LookupSingular.check_if_skip_from_order(self,loc):
+    def check_if_skip_from_order(self, loc: Path):
+        if LookupSingular.check_if_skip_from_order(self, loc):
             return True
         for l_common in self.look_subs:
             if l_common.check_if_skip_from_order(loc):
@@ -2247,9 +2414,7 @@ class LookupMulti(LookupSingular):  # {{{
                 return top_lib
         return None
 
-    def _get_named_item(
-        self, item_ref: str, name: Name, call_back_func_arr, f_obj_required_by : Optional[FileObj]
-    ) -> Optional[FileObj]:
+    def _get_named_item(self, item_ref: str, name: Name, call_back_func_arr, f_obj_required_by: Optional[FileObj]) -> Optional[FileObj]:
         for call_back in call_back_func_arr:
             try:
                 result = call_back(name, f_obj_required_by)
@@ -2257,14 +2422,13 @@ class LookupMulti(LookupSingular):  # {{{
             except KeyError:
                 pass
 
-
-        loc_str = 'None'
+        loc_str = "None"
         if f_obj_required_by is not None:
-            loc_str = f'{f_obj_required_by.lib}:{f_obj_required_by.loc}'
+            loc_str = f"{f_obj_required_by.lib}:{f_obj_required_by.loc}"
         raise KeyError(f"{item_ref} {name} not found in depndency lookups. required by file {loc_str}")
 
-    def get_vhdl_package(self, name: Name, f_obj_required_by : Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
-        def cb(name: Name, f_obj_required_by : Optional[FileObj]):
+    def get_vhdl_package(self, name: Name, f_obj_required_by: Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
+        def cb(name: Name, f_obj_required_by: Optional[FileObj]):
             assert f_obj_required_by is None or isinstance(f_obj_required_by, FileObjVhdl)
             return LookupSingular.get_vhdl_package(self, name, f_obj_required_by)
 
@@ -2273,48 +2437,79 @@ class LookupMulti(LookupSingular):  # {{{
         assert f_obj is None or isinstance(f_obj, FileObjVhdl)
         return f_obj
 
-    def get_entity(self, name: Name, f_obj_required_by : Optional[FileObj], ignore_lib=False) -> Optional[FileObj]:
-        def cb(name: Name, f_obj_required_by : Optional[FileObj]):
+    def get_entity(self, name: Name, f_obj_required_by: Optional[FileObj], ignore_lib=False) -> Optional[FileObj]:
+        def cb(name: Name, f_obj_required_by: Optional[FileObj]):
             return LookupSingular.get_entity(self, name, f_obj_required_by, ignore_lib=ignore_lib)
 
         callbacks = []
         for l in self.look_subs:
-            def cb2(name:Name, f_obj_required_by):
+
+            def cb2(name: Name, f_obj_required_by):
                 return l.get_entity(name=name, f_obj_required_by=f_obj_required_by, ignore_lib=ignore_lib)
 
             callbacks.append(cb2)
 
-
         call_back_func_arr = [cb] + callbacks
         return self._get_named_item("entity", name, call_back_func_arr, f_obj_required_by)
 
-    def get_file_list(self, lib:Optional[str]=None):
+    def _get_x_entity_by_name_only(self, name: str, f_obj_required_by: Optional[FileObj]) -> Optional[Tuple[FileObj, List[FileObj]]]:
+        """
+        Search for X files (XCI/BD) by name only, ignoring library.
+        Searches in this lookup and all sub-lookups.
+        """
+        all_matches = []
+
+        # Search in this lookup
+        result = LookupSingular._get_x_entity_by_name_only(self, name, f_obj_required_by)
+        if result is not None:
+            _, matches = result
+            all_matches.extend(matches)
+
+        # Search in sub-lookups
+        for sub in self.look_subs:
+            result = sub._get_x_entity_by_name_only(name, f_obj_required_by)
+            if result is not None:
+                _, matches = result
+                all_matches.extend(matches)
+
+        if len(all_matches) == 0:
+            return None
+
+        return (all_matches[0], all_matches)
+
+    def get_file_list(self, lib: Optional[str] = None):
         file_list = LookupSingular.get_file_list(self, lib=lib)
 
         for s in self.look_subs:
             file_list += s.get_file_list(lib=lib)
         return file_list
-#}}}
 
-class LookupPrj(LookupMulti): #{{{
+    def filter_x_files_by_requirements(self):
+        """Filter X files in this lookup and all sub-lookups"""
+        LookupSingular.filter_x_files_by_requirements(self)
+        for sub in self.look_subs:
+            sub.filter_x_files_by_requirements()
+
+
+# }}}
+
+
+class LookupPrj(LookupMulti):  # {{{
     TOML_KEYS_OTHER = ["top_entity", "x_tool_version", "x_device"]
     TOML_KEYS_OPT_VER = ["top_vhdl_file", "top_verilog_file", "top_x_bd_file"]
 
-    def __init__(
-            self, look_subs: List[LookupSingular]) : #, file_list: List[Tuple[str, Path]] = [] ):
-        log.debug('LookupPrj::__init__')
+    def __init__(self, look_subs: List[LookupSingular]):  # , file_list: List[Tuple[str, Path]] = [] ):
+        log.debug("LookupPrj::__init__")
         super().__init__(look_subs)
         self.f_obj_top = None
         self._compile_order = None
 
-    def set_top_lib(self, top_lib : Optional[str] = None):
+    def set_top_lib(self, top_lib: Optional[str] = None):
         self._compile_order = None
         super().set_top_lib(top_lib)
 
     @staticmethod
-    def create_from_config_dict(
-            config: dict, work_dir: Path, look_subs=[], top_lib=None, **kwargs
-    ):
+    def create_from_config_dict(config: dict, work_dir: Path, look_subs=[], top_lib=None, **kwargs):
 
         look = LookupPrj(look_subs)
         look.initalise_from_config_dict(config, work_dir, top_lib=top_lib, **kwargs)
@@ -2328,7 +2523,6 @@ class LookupPrj(LookupMulti): #{{{
         if sum > 1:
             raise RuntimeError("Only top_vhdl_file or top_verilog_file or top_x_bd_file is supported")
 
-
         config_keys = config.keys()
         # assert isinstance(config_keys, List)
         # assert all(isinstance(item, str) for item in config_keys)
@@ -2337,7 +2531,7 @@ class LookupPrj(LookupMulti): #{{{
 
             l = []
 
-            def callback(lib: str, loc_str: str, ver:str):
+            def callback(lib: str, loc_str: str, ver: str):
                 loc = work_dir / loc_str
                 n = (lib, loc, ver)
                 if len(l) != 0:
@@ -2350,7 +2544,7 @@ class LookupPrj(LookupMulti): #{{{
 
             lib = l[0][0]
             loc = Path(l[0][1])
-            ver = l[0][2] #TODO
+            ver = l[0][2]  # TODO
 
             look.set_top_file(loc, FileObjType.VHDL, lib, ver)
 
@@ -2358,7 +2552,7 @@ class LookupPrj(LookupMulti): #{{{
 
             l = []
 
-            def callback(lib: str, loc_str: str, ver : str):
+            def callback(lib: str, loc_str: str, ver: str):
                 loc = work_dir / loc_str
                 n = (lib, loc, ver)
                 if len(l) != 0:
@@ -2371,9 +2565,9 @@ class LookupPrj(LookupMulti): #{{{
 
             lib = l[0][0]
             loc = Path(l[0][1])
-            ver = l[0][2] #TODO
+            ver = l[0][2]  # TODO
             if lib != LIB_DEFAULT:
-                log.error(f'verilog does not support libraries got lib {lib}')
+                log.error(f"verilog does not support libraries got lib {lib}")
             look.set_top_file(loc, FileObjType.VERILOG, ver)
 
         if "top_x_bd_file" in config_keys:
@@ -2393,13 +2587,14 @@ class LookupPrj(LookupMulti): #{{{
 
             lib = l[0][0]
             loc = Path(l[0][1])
-            ver = l[0][2] #TODO
+            ver = l[0][2]  # TODO
             if lib != LIB_DEFAULT:
-                log.error(f'x_bd does not support libraries got lib {lib}')
+                log.error(f"x_bd does not support libraries got lib {lib}")
             look.set_top_file(loc, FileObjType.X_BD, ver)
 
         if "top_entity" in config:
             name_list = []
+
             def callback(lib: str, name_str: str):
                 name = Name(lib, name_str)
                 if len(name_list) != 0:
@@ -2412,21 +2607,21 @@ class LookupPrj(LookupMulti): #{{{
             look.set_top_entity(name, do_not_replace_top_file=True)
 
         if "x_tool_version" in config:
-            x_tool_version = config['x_tool_version']
-            if not isinstance(x_tool_version,str):
+            x_tool_version = config["x_tool_version"]
+            if not isinstance(x_tool_version, str):
                 raise RuntimeError(f"x_tool_version needs to be a string got {x_tool_version}")
             look.set_x_tool_version(x_tool_version)
 
         if "x_device" in config:
-            x_device = config['x_device']
-            if not isinstance(x_device,str):
+            x_device = config["x_device"]
+            if not isinstance(x_device, str):
                 raise RuntimeError(f"x_device needs to be a string got {x_device}")
             look.set_x_device(x_device)
 
         return look
 
-    def set_top_file(self, loc: Path, f_type : Optional[FileObjType]=None, lib:str=LIB_DEFAULT, ver:Optional[str]=None):
-        log.info(f'setting {loc} with type {f_type} as top')
+    def set_top_file(self, loc: Path, f_type: Optional[FileObjType] = None, lib: str = LIB_DEFAULT, ver: Optional[str] = None):
+        log.info(f"setting {loc} with type {f_type} as top")
         self.f_obj_top = self.get_loc(loc, type_to_add_to_if_not_found=f_type, lib_to_add_to_if_not_found=lib, ver_to_add_to_if_not_found=ver)
         self._compile_order = None
 
@@ -2435,16 +2630,16 @@ class LookupPrj(LookupMulti): #{{{
             f_obj = self.get_entity(name, f_obj_required_by=None)
             if f_obj != self.f_obj_top:
                 assert isinstance(self.f_obj_top, FileObj)
-                raise RuntimeError(f'top entity specifed {name} but top file specifed {self.f_obj_top.loc}')
+                raise RuntimeError(f"top entity specifed {name} but top file specifed {self.f_obj_top.loc}")
 
         else:
             f_obj = self.get_entity(name, f_obj_required_by=None)
             assert f_obj is not None
             if isinstance(f_obj, FileObjVhdl):
-                log.info(f'top_entity {name} found in vhdl file {f_obj.loc}')
+                log.info(f"top_entity {name} found in vhdl file {f_obj.loc}")
                 self.set_top_file(f_obj.loc, lib=f_obj.lib, ver=f_obj.ver)
             else:
-                log.info(f'top_entity {name} found in file {f_obj.loc}')
+                log.info(f"top_entity {name} found in file {f_obj.loc}")
                 self.set_top_file(f_obj.loc, ver=f_obj.ver)
 
     def has_top_file(self) -> bool:
@@ -2454,9 +2649,7 @@ class LookupPrj(LookupMulti): #{{{
     def compile_order(self):
         if self._compile_order is None:
             if self.f_obj_top is None:
-                raise Exception(
-                    "top_file must be declared in config or on command line"
-                )
+                raise Exception("top_file must be declared in config or on command line")
 
             assert isinstance(self.f_obj_top, FileObj)
             self._compile_order = self.get_init_files() + self.f_obj_top.get_compile_order(self)
@@ -2468,7 +2661,7 @@ class LookupPrj(LookupMulti): #{{{
             assert isinstance(f_obj.level, int)
             print(f'  {f_obj.file_type_str_w_ver_tag+":":10} {"|---"*f_obj.level}{f_obj.lib}: {f_obj.loc}')
 
-    def write_compile_order(self, compile_order_loc: Path, f_type : Optional[FileObjType]=None):
+    def write_compile_order(self, compile_order_loc: Path, f_type: Optional[FileObjType] = None):
         with open(compile_order_loc, "w") as f_order:
             for f_obj in self.compile_order:
                 if f_type is not None:
@@ -2478,9 +2671,8 @@ class LookupPrj(LookupMulti): #{{{
                 else:
                     f_order.write(f"{f_obj.file_type_str_w_ver_tag} {f_obj.lib} {f_obj.loc}\n")
 
-
-    def write_compile_order_lib(self, compile_order_loc: Path, lib:Optional[str], f_type: Optional[FileObjType]=None):
-        log.debug(f'write_compile_order_lib({compile_order_loc=}, {lib=}, {f_type=}')
+    def write_compile_order_lib(self, compile_order_loc: Path, lib: Optional[str], f_type: Optional[FileObjType] = None):
+        log.debug(f"write_compile_order_lib({compile_order_loc=}, {lib=}, {f_type=}")
         lines = 0
         with open(compile_order_loc, "w") as f_order:
             for f_obj in self.compile_order:
@@ -2491,7 +2683,7 @@ class LookupPrj(LookupMulti): #{{{
                     f_order.write(f"{f_obj.loc}\n")
                     lines += 1
         if lines == 0:
-            log.warning(f'not files found for libarary {lib}')
+            log.warning(f"not files found for libarary {lib}")
 
     def write_compile_order_json(self, output_loc: Path):
         """Write complete project compile order to JSON file including both compile order and external files.
@@ -2499,31 +2691,50 @@ class LookupPrj(LookupMulti): #{{{
             output_loc: Path to the output JSON file
         """
         files_list = []
+        seen_external_files = set()  # Track files to deduplicate
 
         # Add external files first (same logic as write_ext_file_list)
         tag_2_ext = self.get_tag_2_ext_file()
         for ver_tag, ext_l in tag_2_ext.items():
             for ext_file in ext_l:
+                ext_file_abs = resolve_abs_path(ext_file)
+                if ext_file_abs in seen_external_files:
+                    continue
+                seen_external_files.add(ext_file_abs)
+
                 # Determine file type from extension
-                file_ext = Path(ext_file).suffix.upper().lstrip('.')
+                file_ext = Path(ext_file).suffix.upper().lstrip(".")
                 if not file_ext:
                     file_ext = "UNKNOWN"
 
-                ext_file_entry = {
-                    "type": "EXTERNAL",
-                    "file_ext": file_ext,
-                    "path": str(ext_file)
-                }
+                ext_file_entry = {"type": "EXTERNAL", "file_ext": file_ext, "path": str(ext_file)}
                 if ver_tag is not None:
                     ext_file_entry["ver_tag"] = ver_tag
                 files_list.append(ext_file_entry)
 
+        # Add coefficient files from XCI files (extracted from direct_deps)
+        for f_obj in self.compile_order:
+            if isinstance(f_obj, FileObjXXci):
+                for direct_dep in f_obj.direct_deps:
+                    if isinstance(direct_dep, FileObjDirect):
+                        coef_file_abs = resolve_abs_path(direct_dep.loc)
+                        if coef_file_abs in seen_external_files:
+                            continue
+                        seen_external_files.add(coef_file_abs)
+
+                        # Determine file type from extension
+                        file_ext = direct_dep.loc.suffix.upper().lstrip(".")
+                        if not file_ext:
+                            file_ext = "UNKNOWN"
+
+                        coef_file_entry = {"type": "EXTERNAL", "file_ext": file_ext, "path": str(direct_dep.loc)}
+                        if direct_dep.ver_tag is not None:
+                            coef_file_entry["ver_tag"] = direct_dep.ver_tag
+                        files_list.append(coef_file_entry)
+
         # Add compile order files (same logic as write_compile_order)
         for f_obj in self.compile_order:
-            file_entry = {
-                "type": f_obj.file_type_str,
-                "path": str(f_obj.loc)
-            }
+            file_entry = {"type": f_obj.file_type_str, "path": str(f_obj.loc)}
             if f_obj is self.f_obj_top:
                 file_entry["is_top"] = True
             if f_obj.lib is not None:
@@ -2533,22 +2744,23 @@ class LookupPrj(LookupMulti): #{{{
             files_list.append(file_entry)
 
         # Create the final JSON structure
-        project_compile_order_json = {
-            "files": files_list
-        }
+        project_compile_order_json = {"files": files_list}
 
         # Write to JSON file
         with open(output_loc, "w") as f:
             json.dump(project_compile_order_json, f, indent=2)
-#}}}
+
+
+# }}}
+
 
 # Handling of configuration files {{{
 def load_config(toml_loc):
-    is_json = toml_loc.suffix == '.json'
-    is_toml = toml_loc.suffix == '.toml' and tomllib is not None
-    is_yaml = toml_loc.suffix == '.yaml' and yaml is not None
-    if (sum([is_json, is_toml, is_yaml]) != 1) :
-        raise RuntimeError("Unexpected file format "+toml_loc.suffix)
+    is_json = toml_loc.suffix == ".json"
+    is_toml = toml_loc.suffix == ".toml" and tomllib is not None
+    is_yaml = toml_loc.suffix == ".yaml" and yaml is not None
+    if sum([is_json, is_toml, is_yaml]) != 1:
+        raise RuntimeError("Unexpected file format " + toml_loc.suffix)
 
     try:
         with open(toml_loc, "rb") as toml_f:
@@ -2559,22 +2771,23 @@ def load_config(toml_loc):
             if is_yaml:
                 return yaml.safe_load(toml_f)
     except Exception as e:
-        print(f'ERROR on file {toml_loc}')
+        print(f"ERROR on file {toml_loc}")
         raise e
 
+
 def create_lookup_from_toml(
-    toml_loc: Path, work_dir: Optional[Path] = None, attemp_read_pickle = True, write_pickle = True, top_lib : Optional[str]= None
+    toml_loc: Path, work_dir: Optional[Path] = None, attemp_read_pickle=True, write_pickle=True, top_lib: Optional[str] = None
 ):
-    log.debug(f'config loc {toml_loc} , work_dir {work_dir}, attemp_read_pickle {attemp_read_pickle}, write_pickle {write_pickle}, top_lib {top_lib}')
+    log.debug(f"config loc {toml_loc} , work_dir {work_dir}, attemp_read_pickle {attemp_read_pickle}, write_pickle {write_pickle}, top_lib {top_lib}")
 
-    is_json = toml_loc.suffix == '.json'
+    is_json = toml_loc.suffix == ".json"
 
-    if not is_json and toml_loc.suffix != '.toml':
+    if not is_json and toml_loc.suffix != ".toml":
         if len(toml_loc.suffix) == 0:
-            log.info('f adding .toml suffix/extension to {toml_loc}')
-            toml_loc = toml_loc.with_suffix('.toml')
+            log.info("f adding .toml suffix/extension to {toml_loc}")
+            toml_loc = toml_loc.with_suffix(".toml")
         else:
-            raise Exception(f'{toml_loc} expected suffix .toml or .json but got {toml_loc.suffix}')
+            raise Exception(f"{toml_loc} expected suffix .toml or .json but got {toml_loc.suffix}")
 
     if not toml_loc.is_file():
         if toml_loc.is_absolute() or work_dir is None:
@@ -2590,14 +2803,13 @@ def create_lookup_from_toml(
             test = temp_dir / toml_loc
         toml_loc = test
 
-
     pickle_loc = LookupSingular.toml_loc_to_pickle_loc(toml_loc)
     config = load_config(toml_loc)
 
     work_dir = toml_loc.parents[0]
 
-    if 'min_ver' in config:
-        min_v = config['min_ver']
+    if "min_ver" in config:
+        min_v = config["min_ver"]
         if HDL_DEPENDS_VERSION_NUM < min_v:
             raise Exception(f"hdldepends version {HDL_DEPENDS_VERSION_NUM} less the {min_v} required by {toml_loc}")
 
@@ -2611,11 +2823,10 @@ def create_lookup_from_toml(
                 create_lookup_from_toml(loc, work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib)
             )
 
-    if 'pre_cmds' in config:
-        for cmd in make_list(config['pre_cmds']):
-            log.info(f'Running {cmd=}')
+    if "pre_cmds" in config:
+        for cmd in make_list(config["pre_cmds"]):
+            log.info(f"Running {cmd=}")
             subprocess.check_output(cmd, shell=True, cwd=work_dir)
-
 
     file_lists = FileLists()
     # vhdl_file_list = None
@@ -2628,7 +2839,7 @@ def create_lookup_from_toml(
         # inst, vhdl_file_list, verilog_file_list, other_file_list, x_bd_file_list, x_xci_file_list = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
         inst, file_lists = LookupSingular.atempt_to_load_from_pickle(pickle_loc, toml_loc, top_lib=top_lib)
         if inst is not None:
-            if hasattr(inst, 'look_subs'):
+            if hasattr(inst, "look_subs"):
                 assert isinstance(inst, LookupMulti)
                 inst.look_subs = look_subs
             elif len(look_subs) != 0:
@@ -2652,46 +2863,46 @@ def create_lookup_from_toml(
 
     # picke_loc = LookupSingular.toml_loc_to_pickle_loc(toml_loc)
     config_keys = config.keys()
-    #TODO workout how to typecheck dict_keyes type
+    # TODO workout how to typecheck dict_keyes type
     # print(f'config_keys.type {type(config_keys)}')
     # assert isinstance(config_keys, Set)
     # assert all(isinstance(item, str) for item in config_keys)
     config_keys = keys_rm_opt_ver(config_keys)
-    ALL_POSIBLE_KEYS = LookupPrj.TOML_KEYS_OTHER + LookupMulti.TOML_KEYS_OTHER + LookupSingular.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER + LookupMulti.TOML_KEYS_OPT_VER + LookupSingular.TOML_KEYS_OPT_VER
+    ALL_POSIBLE_KEYS = (
+        LookupPrj.TOML_KEYS_OTHER
+        + LookupMulti.TOML_KEYS_OTHER
+        + LookupSingular.TOML_KEYS_OTHER
+        + LookupPrj.TOML_KEYS_OPT_VER
+        + LookupMulti.TOML_KEYS_OPT_VER
+        + LookupSingular.TOML_KEYS_OPT_VER
+    )
     error_key = issue_key(ALL_POSIBLE_KEYS, config_keys)
     if error_key is not None:
-        log.info(f'{ALL_POSIBLE_KEYS=}')
+        log.info(f"{ALL_POSIBLE_KEYS=}")
         raise KeyError(f"Got unexpected key {error_key} in file {toml_loc}")
 
-    #TODO check that TOML_KEYS_OTHER do not contain TOML_KEY_VER_SEP!!!
+    # TODO check that TOML_KEYS_OTHER do not contain TOML_KEY_VER_SEP!!!
     if contains_any(config_keys, LookupPrj.TOML_KEYS_OTHER + LookupPrj.TOML_KEYS_OPT_VER):
 
         log.info(f"create LookupPrj from {toml_loc}")
-        inst = LookupPrj.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, file_lists=file_lists
-        )
-
+        inst = LookupPrj.create_from_config_dict(config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, file_lists=file_lists)
 
     elif contains_any(config_keys, LookupMulti.TOML_KEYS_OTHER + LookupMulti.TOML_KEYS_OPT_VER):
 
         log.info(f"create LookupMulti from {toml_loc}")
-        inst = LookupMulti.create_from_config_dict(
-            config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, file_lists=file_lists
-        )
+        inst = LookupMulti.create_from_config_dict(config, work_dir=work_dir, look_subs=look_subs, top_lib=top_lib, file_lists=file_lists)
 
-    else :
-        inst = LookupSingular.create_from_config_dict(
-            config, work_dir=work_dir, top_lib=top_lib, file_lists=file_lists
-        )
+    else:
+        inst = LookupSingular.create_from_config_dict(config, work_dir=work_dir, top_lib=top_lib, file_lists=file_lists)
 
-    print(f'toml_loc {toml_loc}')
+    print(f"toml_loc {toml_loc}")
     time = get_file_modification_time(toml_loc)
-    assert(time is not None)
+    assert time is not None
     inst.toml_modification_time = time
 
     if write_pickle:
         look_subs = None
-        if hasattr(inst, 'look_subs'):
+        if hasattr(inst, "look_subs"):
             assert isinstance(inst, LookupMulti) or isinstance(inst, LookupPrj)
             look_subs = inst.look_subs
         inst.save_to_pickle(pickle_loc)
@@ -2699,27 +2910,30 @@ def create_lookup_from_toml(
             assert isinstance(inst, LookupMulti) or isinstance(inst, LookupPrj)
             inst.look_subs = look_subs
     return inst
+
+
 # }}}
 
+
 # {{{ Main method handling
-def extract_tuple_str(s)-> Tuple[str, str]:
+def extract_tuple_str(s) -> Tuple[str, str]:
     try:
-        lib, f = s.split(':')
+        lib, f = s.split(":")
         return lib, f
     except:
         raise argparse.ArgumentTypeError("--compile-order-lib expects tuples of lib:path")
+
 
 def set_log_level_from_verbose(args):
     global log_level
     if args.verbose is not None:
         log_level = args.verbose
 
+
 def hdldepends():
     parser = argparse.ArgumentParser(description="HDL dependency parser")
 
-    parser.add_argument(
-        "-v", "--verbose", action="count", help="Verbose level, repeat up to two times"
-    )
+    parser.add_argument("-v", "--verbose", action="count", help="Verbose level, repeat up to two times")
     parser.add_argument("-c", "--clear-pickle", action="store_true", help="Delete pickle cache files first.")
     parser.add_argument("--no-pickle", action="store_true", help="Do not write or read any pickle caches")
     parser.add_argument(
@@ -2729,49 +2943,43 @@ def hdldepends():
         help="Paths to / File Names of, the config TOML input file(s).",
     )
     parser.add_argument("--top-file", type=str, help="Location to top level file (expects file to already be added)")
-    parser.add_argument("--top-file-type", type=extract_tuple_str, help="Expects '<type>:<file>' Location to top level file (will add the file if not already added")
+    parser.add_argument(
+        "--top-file-type", type=extract_tuple_str, help="Expects '<type>:<file>' Location to top level file (will add the file if not already added"
+    )
     parser.add_argument("--top-entity", type=str, help="Top level entity to use (expects entity to already be added)")
     parser.add_argument("--top-vhdl-lib", type=str, help="Top level VHDL library")
+    parser.add_argument("--compile-order", type=str, help="Path to the compile order output file. Each line of the file contains library and paths")
+    parser.add_argument("--compile-order-path-only", type=str, help="Path to the compile order output file. File contains Paths only")
     parser.add_argument(
-        "--compile-order", type=str, help="Path to the compile order output file. Each line of the file contains library and paths"
+        "--compile-order-type", nargs="+", type=extract_tuple_str, help="Expects '<type>:<file>' Write compile order of passed  <type> to <file>."
     )
     parser.add_argument(
-        "--compile-order-path-only", type=str, help="Path to the compile order output file. File contains Paths only"
+        "--compile-order-vhdl-lib",
+        nargs="+",
+        type=extract_tuple_str,
+        help="Expects '<lib>:<file>' where 'file' is location to write the VHDL compile order of libary 'lib'.",
     )
+    parser.add_argument("--file-list", type=str, help="Output full file list of in project")
+    parser.add_argument("--file-list-type", nargs="+", type=extract_tuple_str, help="Output full VHDL file list of in project")
     parser.add_argument(
-        "--compile-order-type", nargs ="+", type=extract_tuple_str, help="Expects '<type>:<file>' Write compile order of passed  <type> to <file>."
+        "--file-list-vhdl-lib",
+        nargs="+",
+        type=extract_tuple_str,
+        help="Expects '<lib>:<file>' where <file> is location to write the file list of VHDL library <lib>.",
     )
+    parser.add_argument("--ext-file-list", type=str, help="external file list")
+    parser.add_argument("--ext-file-list-tag", nargs="+", type=extract_tuple_str, help="external file list for a given tag, Expects '<tag>:<file>'")
     parser.add_argument(
-        "--compile-order-vhdl-lib", nargs ="+", type=extract_tuple_str, help="Expects '<lib>:<file>' where 'file' is location to write the VHDL compile order of libary 'lib'."
+        "--compile-order-json", type=str, help="Create a complete project compile order JSON file including both compile order and external files"
     )
-    parser.add_argument(
-        "--file-list", type=str, help="Output full file list of in project"
-    )
-    parser.add_argument(
-        "--file-list-type", nargs="+", type=extract_tuple_str, help="Output full VHDL file list of in project"
-    )
-    parser.add_argument(
-        "--file-list-vhdl-lib", nargs="+", type=extract_tuple_str, help="Expects '<lib>:<file>' where <file> is location to write the file list of VHDL library <lib>."
-    )
-    parser.add_argument(
-        "--ext-file-list", type=str, help="external file list"
-    )
-    parser.add_argument(
-        "--ext-file-list-tag", nargs="+", type=extract_tuple_str, help="external file list for a given tag, Expects '<tag>:<file>'"
-    )
-    parser.add_argument(
-        "--compile-order-json", type=str,
-        help="Create a complete project compile order JSON file including both compile order and external files"
-    )
-    parser.add_argument( "--x-tool-version", type=str, help="Xilinx tool version (used for choosing x_bd and x_xci files)")
-    parser.add_argument( "--x-device", type=str, help="Xilinx device (used for choosing x_bd and x_xci files)")
+    parser.add_argument("--x-tool-version", type=str, help="Xilinx tool version (used for choosing x_bd and x_xci files)")
+    parser.add_argument("--x-device", type=str, help="Xilinx device (used for choosing x_bd and x_xci files)")
     args = parser.parse_args()
 
     set_log_level_from_verbose(args)
-    log.debug(f'{HDL_DEPENDS_VERSION_NUM=}')
+    log.debug(f"{HDL_DEPENDS_VERSION_NUM=}")
 
-
-    work_dir=Path('.')
+    work_dir = Path(".")
     top_lib = None
     if args.top_vhdl_lib:
         top_lib = args.top_vhdl_lib
@@ -2781,9 +2989,9 @@ def hdldepends():
     look = None
     if args.config_file:
         if len(args.config_file) == 1:
-            log.debug('creating top level project toml')
-            look = create_lookup_from_toml(Path(args.config_file[0]), work_dir=work_dir,
-                attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
+            log.debug("creating top level project toml")
+            look = create_lookup_from_toml(
+                Path(args.config_file[0]), work_dir=work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib
             )
             if not isinstance(look, LookupPrj):
                 assert isinstance(look, LookupSingular)
@@ -2812,6 +3020,8 @@ def hdldepends():
     if x_device is not None:
         look.set_x_device(x_device)
 
+    # Filter out X files that don't match requirements
+    look.filter_x_files_by_requirements()
 
     if args.top_file_type:
         f_type_str, file_str = args.file_file_type
@@ -2823,7 +3033,6 @@ def hdldepends():
     if args.top_file:
         assert isinstance(look, LookupPrj)
         look.set_top_file(Path(args.top_file))
-
 
     if args.top_entity:
         assert isinstance(look, LookupPrj)
@@ -2857,17 +3066,17 @@ def hdldepends():
             look.write_ext_file_list(Path(f), tag)
 
     if args.compile_order is not None:
-        assert(look.has_top_file())
+        assert look.has_top_file()
         assert isinstance(look, LookupPrj)
         look.write_compile_order(Path(args.compile_order))
 
     if args.compile_order_path_only is not None:
-        assert(look.has_top_file())
+        assert look.has_top_file()
         assert isinstance(look, LookupPrj)
         look.write_compile_order_lib(Path(args.compile_order_path_only), None)
 
     if args.compile_order_type is not None:
-        assert(look.has_top_file())
+        assert look.has_top_file()
         assert isinstance(look, LookupPrj)
         for f_type_str, file_out_str in args.compile_order_type:
             f_type = string_to_FileObjType(f_type_str)
@@ -2878,16 +3087,18 @@ def hdldepends():
                 look.write_compile_order_lib(loc, LIB_DEFAULT, f_type)
 
     if args.compile_order_vhdl_lib is not None:
-        assert(look.has_top_file())
+        assert look.has_top_file()
         assert isinstance(look, LookupPrj)
         for lib, f in args.compile_order_vhdl_lib:
             look.write_compile_order_lib(Path(f), lib, FileObjType.VHDL)
 
     if args.compile_order_json is not None:
-        assert(look.has_top_file())
+        assert look.has_top_file()
         assert isinstance(look, LookupPrj)
         look.write_compile_order_json(Path(args.compile_order_json))
+
 
 if __name__ == "__main__":
     hdldepends()
 # }}}
+
