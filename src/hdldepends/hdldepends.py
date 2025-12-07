@@ -67,7 +67,7 @@ class log:
 
 TOML_KEY_VER_SEP = "@"
 
-HDL_DEPENDS_VERSION_NUM = 1.02
+HDL_DEPENDS_VERSION_NUM = 1.03
 
 
 # Utility functions {{{
@@ -259,6 +259,9 @@ class Lookup:  # {{{
     def get_vhdl_package(self, name: Name, f_obj_required_by: Optional["FileObjVhdl"]) -> Optional["FileObjVhdl"]:
         raise Exception("Virtual called")
 
+    def get_verilog_package(self, name: Name, f_obj_required_by: Optional["FileObjVerilog"]) -> Optional["FileObjVerilog"]:
+        raise Exception("Virtual called")
+
     def get_entity(self, name: Name, f_obj_required_by: Optional["FileObj"], ignore_lib=False) -> Optional["FileObj"]:
         raise Exception("Virtual called")
 
@@ -277,6 +280,9 @@ class Lookup:  # {{{
     def add_vhdl_package(self, name: Name, f_obj: "FileObjVhdl"):
         pass
 
+    def add_verilog_package(self, name: Name, f_obj: "FileObjVerilog"):
+        pass
+
     def write_file_list(self, f_loc, f_type: Optional["FileObjType"] = None, lib: Optional[str] = None):
         pass
 
@@ -285,6 +291,12 @@ class Lookup:  # {{{
 
     def has_top_file(self) -> bool:
         return False
+
+    def get_verilog_include_dir_list(self) -> List[Path]:
+        return []
+
+    def get_verilog_include_file_list(self):
+        return []
 
     def set_x_tool_version(self, x_tool_version: str):
         if len(self.x_tool_version) != 0:
@@ -370,6 +382,7 @@ class FileObjType(Enum):
     X_BD = auto()
     X_XCI = auto()
     DIRECT = auto()
+    VERILOG_INCLUDE = auto()
 
 
 def string_to_FileObjType(s: str) -> FileObjType:
@@ -514,11 +527,22 @@ class FileObjOther(FileObj):
 
     @property
     def file_type_str(self) -> str:
-        return "Other"
+        return "OTHER"
 
     def parse_file_again(self) -> FileObj:
         return self
 
+class FileObjVerilogInclude(FileObj):
+    def __init__(self, loc: Path, ver: Optional[str]=None):
+        super().__init__(loc, ver)
+        self.f_type: Optional[FileObjType] = FileObjType.VERILOG_INCLUDE
+
+    @property
+    def file_type_str(self) -> str:
+        return "VERILOG_INC"
+
+    def parse_file_again(self) -> FileObj:
+        return self
 
 class FileObjDirect(FileObj):
     def __init__(self, loc: Path):
@@ -555,6 +579,9 @@ class FileObjX(FileObj):
         # Check device match
         if self.x_device != required_x_device:
             log.debug(f"File {self.loc} x_device {self.x_device} != required {required_x_device}")
+                # temp = ','.join([str(cf_obj.loc) for cf_obj in f_obj.get_f_objs()])
+                # log.warning("Conflicted file objects: "+temp) #HERE
+                # return True
             return False
 
         return True
@@ -592,15 +619,14 @@ class FileObjXXci(FileObjX):
 
 class FileObjVerilog(FileObj):
 
-    @dataclass
-    class VInc:
-        name: str
-        is_sys: bool
-
-    def __init__(self, loc: Path, ver: Optional[str]):
+    def __init__(self, loc: Path, ver: Optional[str], include_dir_list : List[Path], include_file_list : List[FileObjVerilogInclude]):
         super().__init__(loc, ver)
-        self.verilog_includes: List[FileObjVerilog.VInc] = []
+        self.verilog_include_deps: List[FileObjVerilogInclude] = []
+        self.verilog_package_deps : List[Name] = []
         self.f_type: Optional[FileObjType] = FileObjType.VERILOG
+        self.verilog_package : List[Name] = []
+        self.verilog_include_dir_list = include_dir_list
+        self.verilog_include_file_list = include_file_list
 
     @property
     def file_type_str(self) -> str:
@@ -609,6 +635,8 @@ class FileObjVerilog(FileObj):
     def register_with_lookup(self, look: Lookup, skip_loc: bool = False):
         super().register_with_lookup(look, skip_loc)
         look.add_verilog_file_name(self.loc.name, self)
+        for p in self.verilog_package:
+            look.add_verilog_package(p, self)
 
     def get_file_deps(self, look: Lookup) -> List[FileObj]:
         file_deps = []
@@ -621,32 +649,36 @@ class FileObjVerilog(FileObj):
             if f_obj is not None:
                 self._add_to_f_deps(file_deps, f_obj)
 
+        file_deps += self.get_verilog_include_deps(look)
+        file_deps += self.get_verilog_package_deps(look)
+
+
         return file_deps
 
-    def get_verilog_include_deps(self, look: Lookup) -> List[FileObj]:
-        raise Exception("TODO!!!")
-        # file_deps = []
-        #
-        # for name, is_sys in self.verilog_includes:
-        #     f_obj = look.get_verilog_file(name, self)
-        #     if f_obj is not None:
-        #         self._add_to_f_deps(file_deps, f_obj)
-        #     else:
-        #         if is_sys:
-        #             log.warning('could not find sys include')
-        #         else:
-        #             log.error('could not find sys include')
-        # return file_deps
+    def get_verilog_include_deps(self, look: Lookup) -> List[FileObjVerilogInclude]:
+        return self.verilog_include_deps
+
+    def get_verilog_package_deps(self, look: Lookup) -> List[FileObj]:
+        file_deps = []
+
+        for p in self.verilog_package_deps:
+            f_obj = look.get_verilog_package(p, self)
+            if f_obj is not None:
+                self._add_to_f_deps(file_deps, f_obj)
+        return file_deps
 
     def parse_file_again(self) -> FileObj:
         assert self.ver is str or self.ver is None
-        return parse_verilog_file(None, loc=self.loc, ver=self.ver)
+        return parse_verilog_file(None, loc=self.loc, ver=self.ver, old_file=self)
 
     def equivalent(self, other: FileObj):
         if not isinstance(other, FileObjVerilog):
             return False
 
-        result = self.verilog_includes == other.verilog_includes
+        result = self.verilog_include_deps == other.verilog_include_deps
+        if not result:
+            return result
+        result = self.verilog_package_deps == other.verilog_package_deps
         if not result:
             return result
 
@@ -1231,16 +1263,40 @@ def verilog_extract_module_instantiations(verilog_code):
 
 # Function to extract include files from Verilog code
 def verilog_extract_include_files(verilog_code):
+    #TODO: Modify verilog_code by replacing it with the include statment with the included file
     include_regex = r'`include\s+(["<])([^">]+)[">]'
     matches = re.finditer(include_regex, verilog_code)
     includes = []
     for match in matches:
-        inc_is_sys = match.group(1) == "<"
-        inc_name = [match.group(2) for match in matches]
-        includes.append((inc_name, inc_is_sys))
+        # inc_is_sys = match.group(1) == "<"
+        inc_name = match.group(2)
+        includes.append(inc_name)
 
     return includes
 
+def verilog_extract_packages(verilog_code):
+
+    pattern = r'package\s+(\w+)\s*;'
+    matches = re.finditer(pattern, verilog_code, re.DOTALL | re.IGNORECASE)
+
+    packages = []
+    for match in matches:
+        pkg_name = match.group(1)
+        packages.append(pkg_name)
+
+    return packages
+
+def verilog_extract_package_imports(verilog_code):
+    pattern = r'\bimport\s+(\w+)::([\w\*]+)\s*;'
+    matches = re.finditer(pattern, verilog_code, re.DOTALL | re.IGNORECASE)
+
+    packages = []
+    for match in matches:
+        pkg_name = match.group(1)
+        # item_name = match.group(2)
+        packages.append(pkg_name)
+
+    return packages
 
 def verilog_extract_module_declarations(verilog_code):
     module_declaration_regex = r"module\s+(\w+)\s*(?:\#\s*\([^)]*\))?\s*\("  # )
@@ -1254,7 +1310,17 @@ def verilog_extract_module_declarations(verilog_code):
     return declarations
 
 
-def parse_verilog_file(look: Optional[Lookup], loc: Path, ver: Optional[str]) -> FileObjVerilog:
+def parse_verilog_file(look: Optional[Lookup], loc: Path, ver: Optional[str], old_file : Optional[FileObjVerilog] = None) -> FileObjVerilog:
+    if look is not None:
+        verilog_include_dir_list = look.get_verilog_include_dir_list()
+        verilog_include_file_list = look.get_verilog_include_file_list()
+    else:
+        assert old_file, "look or old_file must  be defiend (to handel include files)"
+        verilog_include_dir_list = old_file.verilog_include_dir_list
+        verilog_include_file_list = old_file.verilog_include_file_list
+
+    assert verilog_include_dir_list is not None
+    assert verilog_include_file_list is not None
     log.info(f"passing Verilog file {loc}:")
 
     if loc.suffix != ".v" and loc.suffix != ".sv":
@@ -1266,21 +1332,49 @@ def parse_verilog_file(look: Optional[Lookup], loc: Path, ver: Optional[str]) ->
 
     clean_code = verilog_remove_comments(verilog_code)
 
-    f_obj = FileObjVerilog(loc, ver)
-    for inc_name, inc_is_sys in verilog_extract_include_files(clean_code):
-        vinc = f_obj.VInc(inc_name, inc_is_sys)
-        if vinc not in f_obj.verilog_includes:
+    f_dir = loc.parent
+    f_obj = FileObjVerilog(loc, ver, verilog_include_dir_list, verilog_include_file_list)
+    verilog_include_dir_list = [Path('.')] + verilog_include_dir_list
+    for inc_name in verilog_extract_include_files(clean_code):
+        # vinc = f_obj.VInc(inc_name, inc_is_sys)
+        h = None
+        inc_path = Path(inc_name)
+        for h_dir in verilog_include_dir_list:
+            if not h_dir.is_absolute():
+                h_dir = f_dir / h_dir
+            for h_file in verilog_include_file_list:
+                assert isinstance(h_file, FileObjVerilogInclude)
+                if h_dir/inc_path == h_file.loc:
+                    h = h_file
+        if h is not None:
             log.debug(f"Verilog {loc} includes {inc_name}")
-            f_obj.verilog_includes.append(vinc)
+            f_obj.verilog_include_deps.append(h)
+        else:
+            log.warning(f"Verilog {loc} includes {inc_name} but file cannot be found")
+        # if vinc not in f_obj.verilog_include_deps:
+        #     f_obj.verilog_includes.append(vinc)
+    for package_name in verilog_extract_packages(clean_code):
+        name = Name(LIB_DEFAULT, package_name)
+        if name not in f_obj.verilog_package:
+            log.debug(f"Verilog {loc} declards package {package_name}")
+            f_obj.verilog_package.append(name)
+
+    for package_name in verilog_extract_package_imports(clean_code):
+        name = Name(LIB_DEFAULT, package_name)
+        if name not in f_obj.verilog_package_deps:
+            log.debug(f"Verilog {loc} requires package {package_name}")
+            f_obj.verilog_package_deps.append(name)
+
     for module_name in verilog_extract_module_declarations(clean_code):
         name = Name(LIB_DEFAULT, module_name)
         if name not in f_obj.entities:
-            log.debug(f"Verilog {loc} declards {module_name}")
+            log.debug(f"Verilog {loc} declards module {module_name}")
             f_obj.entities.append(name)
+
     for module_name in verilog_extract_module_instantiations(clean_code):
         name = Name(LIB_DEFAULT, module_name)
         if name not in f_obj.entity_deps:
-            log.debug(f"Verilog {loc} requires {module_name}")
+            log.debug(f"Verilog {loc} requires module {module_name}")
             f_obj.entity_deps.append(name)
 
     if look is not None:
@@ -1558,6 +1652,8 @@ def parse_x_bd_file(look: Optional[Lookup], loc: Path, ver: Optional[str]) -> Fi
 class FileLists:
     vhdl: Optional[List[Tuple[str, Path, str]]] = None
     verilog: Optional[List[Tuple[Path, str]]] = None
+    verilog_include: Optional[List[Tuple[Path, str]]] = None
+    verilog_include_dir: Optional[List[Path]] = None
     other: Optional[List[Tuple[Path, str]]] = None
     x_bd: Optional[List[Tuple[Path, str]]] = None
     x_xci: Optional[List[Tuple[Path, str]]] = None
@@ -1586,6 +1682,10 @@ class LookupSingular(Lookup):  # {{{
         "verilog_files",
         "verilog_files_file",
         "verilog_files_glob",
+        "verilog_include_dir",
+        "verilog_include_files",
+        "verilog_include_files_file",
+        "verilog_include_files_glob",
         "other_files",
         "other_files_file",
         "other_files_glob",
@@ -1606,7 +1706,8 @@ class LookupSingular(Lookup):  # {{{
         super().__init__()
         self.version = LookupSingular.VERSION
         self.allow_duplicates = allow_duplicates
-        self.package_name_2_file_obj: dict[Name, FileObjLookup] = {}
+        self.vhdl_package_name_2_file_obj: dict[Name, FileObjLookup] = {}
+        self.verilog_package_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.entity_name_2_file_obj: dict[Name, FileObjLookup] = {}
         self.verilog_file_name_2_file_obj: dict[str, FileObjVerilog] = {}
         self.ignore_set_libs: set[str] = set()
@@ -1620,6 +1721,8 @@ class LookupSingular(Lookup):  # {{{
         self.files_2_skip_from_order: set[Path] = set()
         self.vhdl_file_list = None
         self.verilog_file_list = None
+        self.verilog_include_dir_list = None
+        self.verilog_include_file_list = None
         self.other_file_list = None
         self.x_bd_file_list = None
         self.x_xci_file_list = None
@@ -1699,6 +1802,17 @@ class LookupSingular(Lookup):  # {{{
             log.info(f"Will not load from pickle as vhdl_file_list has changed")
             return None, file_lists
 
+        #verilog include fikles effect the way verilog files are passed
+        file_lists.verilog_include_dir = LookupSingular.get_verilog_include_dir_list_from_config_dict(config, toml_loc.parent, top_lib)
+        if file_lists.verilog_include_dir != inst.verilog_include_dir_list:
+            log.info(f"Will not load from pickle as verilog_include_dir_list has changed")
+            return None, file_lists
+
+        file_lists.verilog_include = LookupSingular.get_verilog_include_file_list_from_config_dict(config, toml_loc.parent, top_lib)
+        if file_lists.verilog_include != inst.verilog_include_file_list:
+            log.info(f"Will not load from pickle as verilog_include_file_list has changed")
+            return None, file_lists
+
         file_lists.verilog = LookupSingular.get_verilog_file_list_from_config_dict(config, toml_loc.parent, top_lib)
         if file_lists.verilog != inst.verilog_file_list:
             log.info(f"Will not load from pickle as verilog_file_list has changed")
@@ -1767,7 +1881,8 @@ class LookupSingular(Lookup):  # {{{
         if compile_order_out_of_date:
             log.info("Compile order has change")
             # brute force update of dict because resolving a conflict is annoying
-            self.package_name_2_file_obj = {}
+            self.vhdl_package_name_2_file_obj = {}
+            self.verilog_package_name_2_file_obj = {}
             self.entity_name_2_file_obj = {}
             self.verilog_file_name_2_file_obj = {}
             for _, f_obj in self.loc_2_file_obj.items():
@@ -1860,7 +1975,7 @@ class LookupSingular(Lookup):  # {{{
                 case FileObjType.VHDL:
                     file_obj = FileObjVhdl(loc, lib, ver_tag)
                 case FileObjType.VERILOG:
-                    file_obj = FileObjVerilog(loc, ver_tag)
+                    file_obj = FileObjVerilog(loc, ver_tag, [], [])
                 case FileObjType.OTHER:
                     file_obj = FileObjOther(loc, ver_tag)
                 case FileObjType.X_BD:
@@ -1870,6 +1985,7 @@ class LookupSingular(Lookup):  # {{{
                 case FileObjType.DIRECT:
                     raise Exception(f"config file key {config_key}. does not surrot file type direct")
             # init_files are just added outside of the worked out compile order so they do not have a level
+            assert file_obj is not None
             file_obj.level = 0
 
             init_files.append(file_obj)
@@ -1920,6 +2036,12 @@ class LookupSingular(Lookup):  # {{{
         if file_lists.vhdl is None:
             file_lists.vhdl = LookupSingular.get_vhdl_file_list_from_config_dict(config, work_dir, top_lib)
 
+        if file_lists.verilog_include_dir is None:
+            file_lists.verilog_include_dir = LookupSingular.get_verilog_include_dir_list_from_config_dict(config, work_dir, top_lib=top_lib)
+
+        if file_lists.verilog_include is None:
+            file_lists.verilog_include = LookupSingular.get_verilog_include_file_list_from_config_dict(config, work_dir, top_lib=top_lib)
+
         if file_lists.verilog is None:
             file_lists.verilog = LookupSingular.get_verilog_file_list_from_config_dict(config, work_dir, top_lib=top_lib)
 
@@ -1950,11 +2072,15 @@ class LookupSingular(Lookup):  # {{{
     def register_file_lists(self, file_lists: FileLists):
         assert file_lists.vhdl is not None
         assert file_lists.verilog is not None
+        assert file_lists.verilog_include is not None
+        assert file_lists.verilog_include_dir is not None
         assert file_lists.other is not None
         assert file_lists.x_bd is not None
         assert file_lists.x_xci is not None
         assert file_lists.tag_2_ext is not None
         self.register_vhdl_file_list(file_lists.vhdl)
+        self.register_verilog_include_dir_list(file_lists.verilog_include_dir)
+        self.register_verilog_include_file_list(file_lists.verilog_include)
         self.register_verilog_file_list(file_lists.verilog)
         self.register_other_file_list(file_lists.other)
         self.register_x_bd_file_list(file_lists.x_bd)
@@ -2034,6 +2160,18 @@ class LookupSingular(Lookup):  # {{{
         return LookupSingular.get_common_file_list_from_config_dict_force_default_lib("verilog", config, work_dir, top_lib)
 
     @staticmethod
+    def get_verilog_include_dir_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
+        log.debug(f"called get_verilog_include_dir_list_from_config_dict( top_lib={top_lib} )")
+        if 'verilog_include_dir' in config:
+            return make_list(config['verilog_include_dir'])
+        return []
+
+    @staticmethod
+    def get_verilog_include_file_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
+        log.debug(f"called get_verilog_include_file_list_from_config_dict( top_lib={top_lib} )")
+        return LookupSingular.get_common_file_list_from_config_dict_force_default_lib("verilog_include", config, work_dir, top_lib)
+
+    @staticmethod
     def get_other_file_list_from_config_dict(config: dict, work_dir: Path, top_lib: Optional[str]):
         return LookupSingular.get_common_file_list_from_config_dict_force_default_lib("other", config, work_dir, top_lib)
 
@@ -2082,6 +2220,22 @@ class LookupSingular(Lookup):  # {{{
         for loc, ver in verilog_file_list:
             parse_verilog_file(self, loc, ver=ver)
 
+    def register_verilog_include_file_list(self, verilog_include_loc_list: List[Tuple[Path, str]]):
+        if self.verilog_include_file_list is None:
+            self.verilog_include_file_list = []
+        for loc, ver in verilog_include_loc_list:
+            f_obj = FileObjVerilogInclude(loc, ver)
+            self.verilog_include_file_list.append(f_obj)
+            self.add_loc(loc, f_obj)
+
+    def register_verilog_include_dir_list(self, verilog_include_dir_list: List[Path]):
+        if self.verilog_include_dir_list is None:
+            self.verilog_include_dir_list = []
+        for loc in verilog_include_dir_list:
+            loc = resolve_abs_path(loc)
+            self.verilog_include_dir_list.append(loc)
+
+
     @staticmethod
     def ext_file_list_2_dict(ext_file_list: List[Tuple[Path, str]]) -> dict[str, List[Path]]:
         tag_2_ext_file = {}
@@ -2102,7 +2256,10 @@ class LookupSingular(Lookup):  # {{{
         return inst
 
     def add_vhdl_package(self, name: Name, f_obj: FileObjVhdl):
-        self._add_to_dict(self.package_name_2_file_obj, name, f_obj)
+        self._add_to_dict(self.vhdl_package_name_2_file_obj, name, f_obj)
+
+    def add_verilog_package(self, name: Name, f_obj: FileObjVerilog):
+        self._add_to_dict(self.verilog_package_name_2_file_obj, name, f_obj)
 
     def add_entity(self, name: Name, f_obj: FileObj):
         self._add_to_dict(self.entity_name_2_file_obj, name, f_obj)
@@ -2122,20 +2279,47 @@ class LookupSingular(Lookup):  # {{{
         loc = resolve_abs_path(loc)
         return loc in self.loc_2_file_obj
 
+    def get_verilog_include_dir_list(self) -> list[Path]:
+        assert self.verilog_include_dir_list is not None
+        return self.verilog_include_dir_list
+
+    def get_verilog_include_file_list(self) -> list[FileObjVerilogInclude]:
+        assert self.verilog_include_file_list is not None
+        return self.verilog_include_file_list
+
     def get_vhdl_package(self, name: Name, f_obj_required_by: Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
         loc_str = "None"
         if f_obj_required_by is not None:
             loc_str = str(f_obj_required_by.loc)
-        if name not in self.package_name_2_file_obj:
+        if name not in self.vhdl_package_name_2_file_obj:
             if name.lib in self.ignore_set_libs:
                 return None
             if name in self.ignore_set_packages:
                 return None
             raise KeyError(f"ERROR: Could not find package {name} required by {loc_str}")
 
-        item = self.package_name_2_file_obj[name]
+        item = self.vhdl_package_name_2_file_obj[name]
         if isinstance(item, FileObj):
             assert isinstance(item, FileObjVhdl)
+            return item
+        elif isinstance(item, ConflictFileObj):
+            item.log_confict(name)
+            raise KeyError(f"ERROR: confict on package {name} required by {loc_str}")
+
+    def get_verilog_package(self, name: Name, f_obj_required_by: Optional[FileObjVerilog]) -> Optional[FileObjVerilog]:
+        loc_str = "None"
+        if f_obj_required_by is not None:
+            loc_str = str(f_obj_required_by.loc)
+        if name not in self.verilog_package_name_2_file_obj:
+            if name.lib in self.ignore_set_libs:
+                return None
+            if name in self.ignore_set_packages:
+                return None
+            raise KeyError(f"ERROR: Could not find package {name} required by {loc_str}")
+
+        item = self.verilog_package_name_2_file_obj[name]
+        if isinstance(item, FileObj):
+            assert isinstance(item, FileObjVerilog)
             return item
         elif isinstance(item, ConflictFileObj):
             item.log_confict(name)
@@ -2289,6 +2473,8 @@ class LookupMulti(LookupSingular):  # {{{
         super().__init__(allow_duplicates=True)
         self.f_obj_top = None
         self._compile_order = None
+        self.verilog_include_dir_list_final = None
+        self.verilog_include_file_list_final = None
 
     def loc_to_file_obj(self, loc) -> Optional[FileObj]:
         f_obj = LookupSingular.loc_to_file_obj(self, loc)
@@ -2448,6 +2634,30 @@ class LookupMulti(LookupSingular):  # {{{
             loc_str = f"{f_obj_required_by.lib}:{f_obj_required_by.loc}"
         raise KeyError(f"{item_ref} {name} not found in depndency lookups. required by file {loc_str}")
 
+    def get_verilog_include_dir_list(self) -> List[Path]:
+        if self.verilog_include_dir_list_final is not None:
+            return self.verilog_include_dir_list_final
+        d = LookupSingular.get_verilog_include_dir_list(self)
+        assert d is not None
+        self.verilog_include_dir_list_final = d
+        for sub in self.look_subs:
+            d = LookupSingular.get_verilog_include_dir_list(sub)
+            assert d is not None
+            self.verilog_include_dir_list_final += d
+        return self.verilog_include_dir_list_final
+
+    def get_verilog_include_file_list(self):
+        if self.verilog_include_file_list_final is not None:
+            return self.verilog_include_file_list_final
+        d = LookupSingular.get_verilog_include_file_list(self)
+        assert d is not None
+        self.verilog_include_file_list_final = d
+        for sub in self.look_subs:
+            d = LookupSingular.get_verilog_include_file_list(sub)
+            assert d is not None
+            self.verilog_include_file_list_final += d
+        return self.verilog_include_file_list_final
+
     def get_vhdl_package(self, name: Name, f_obj_required_by: Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
         def cb(name: Name, f_obj_required_by: Optional[FileObj]):
             assert f_obj_required_by is None or isinstance(f_obj_required_by, FileObjVhdl)
@@ -2456,6 +2666,16 @@ class LookupMulti(LookupSingular):  # {{{
         call_back_func_arr = [cb] + [l.get_vhdl_package for l in self.look_subs]
         f_obj = self._get_named_item("package", name, call_back_func_arr, f_obj_required_by)
         assert f_obj is None or isinstance(f_obj, FileObjVhdl)
+        return f_obj
+
+    def get_verilog_package(self, name: Name, f_obj_required_by: Optional[FileObjVerilog]) -> Optional[FileObjVerilog]:
+        def cb(name: Name, f_obj_required_by: Optional[FileObj]):
+            assert f_obj_required_by is None or isinstance(f_obj_required_by, FileObjVerilog)
+            return LookupSingular.get_verilog_package(self, name, f_obj_required_by)
+
+        call_back_func_arr = [cb] + [l.get_verilog_package for l in self.look_subs]
+        f_obj = self._get_named_item("package", name, call_back_func_arr, f_obj_required_by)
+        assert f_obj is None or isinstance(f_obj, FileObjVerilog)
         return f_obj
 
     def get_entity(self, name: Name, f_obj_required_by: Optional[FileObj], ignore_lib=False) -> Optional[FileObj]:
@@ -2680,7 +2900,7 @@ class LookupPrj(LookupMulti):  # {{{
         print("compile order:")
         for f_obj in self.compile_order:
             assert isinstance(f_obj.level, int)
-            print(f'  {f_obj.file_type_str_w_ver_tag+":":10} {"|---"*f_obj.level}{f_obj.lib}: {f_obj.loc}')
+            print(f'  {f_obj.file_type_str_w_ver_tag+":":14} {"|---"*f_obj.level}{f_obj.lib}: {f_obj.loc}')
 
     def write_compile_order(self, compile_order_loc: Path, f_type: Optional[FileObjType] = None):
         with open(compile_order_loc, "w") as f_order:
@@ -2777,7 +2997,7 @@ class LookupPrj(LookupMulti):  # {{{
 
 
 # Handling of configuration files {{{
-def load_config(toml_loc):
+def load_config(toml_loc) -> Dict:
     is_json = toml_loc.suffix == ".json"
     is_toml = toml_loc.suffix == ".toml" and tomllib is not None
     is_yaml = toml_loc.suffix == ".yaml" and yaml is not None
@@ -2792,6 +3012,7 @@ def load_config(toml_loc):
                 return tomllib.load(toml_f)
             if is_yaml:
                 return yaml.safe_load(toml_f)
+            assert False
     except Exception as e:
         print(f"ERROR on file {toml_loc}")
         raise e
@@ -3125,4 +3346,5 @@ def hdldepends():
 if __name__ == "__main__":
     hdldepends()
 # }}}
+
 

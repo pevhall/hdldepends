@@ -5,6 +5,7 @@ ignore_components = 'delComp2'
 'top_vhdl_file@p' = {work = './del.vhd'}
 # top_entity = 'del'
 'vhdl_files@p' = {work = ['./del3.vhd', './bd_hdl.vhd','./led_controller.vhd', './fir_compiler_0_sim_netlist.vhdl']}
+'verilog_include_files_glob@p' = './*.vh'
 'verilog_files@p' = './counter.v'
 'verilog_files_glob@p' = './*.sv'
 'x_bd_files_glob@p' = './*.bd'

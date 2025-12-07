@@ -1,4 +1,4 @@
-
+`include "inc.vh"
 //-----------------------------------------------------
 // Design Name : up_down_counter
 // File Name   : up_down_counter.v
@@ -11,6 +11,7 @@ up_down_i  ,  // up_down_i control for counter
 clk_i      ,  // clock input
 rst_i       // rst_i input
 );
+import misc_package::*;
 //----------Output Ports--------------
 output [7:0] cntr_o;
 //------------Input Ports-------------- 
