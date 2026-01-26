@@ -7,5 +7,5 @@ sub ='hdl_deps_sub2.toml'
 
 'ext_files@s1' = ['./s1_2.xci', './s1_3.xci']
 
-vhdl_package_skip_order = {unisim = './unisim_VCOMP.vhd'}
+# vhdl_package_skip_order = {unisim = './unisim_VCOMP.vhd'}
 

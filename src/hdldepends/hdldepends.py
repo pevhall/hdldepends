@@ -16,13 +16,13 @@ try:
     import tomllib
 except ModuleNotFoundError:
     try:
-        import tomli as tomllib
+        import tomli as tomllib # type: ignore
     except ModuleNotFoundError:
         pass
 
 yaml = None
 try:
-    import yaml
+    import yaml # type: ignore
 except ModuleNotFoundError:
     pass
 

@@ -2,7 +2,7 @@ min_ver=1.01
 sub ='hdl_deps_sub1.toml'
 ignore_components = 'delComp2'
 'other_files_file@p' = 'extern_deps.txt'
-'top_vhdl_file@p' = {work = './del.vhd'}
+'top_vhdl_file@p' = {del_lib = './del.vhd'}
 # top_entity = 'del'
 'vhdl_files@p' = {work = ['./del3.vhd', './bd_hdl.vhd','./led_controller.vhd', './fir_compiler_0_sim_netlist.vhdl']}
 'verilog_include_files_glob@p' = './*.vh'
@@ -20,5 +20,5 @@ init_files = [['encrypted.vhd', 'VHDL'],
            ['encrypted3.v', 'verilog', 'p']
 	]
 
-vhdl_package_skip_order = { xpm = '{XILINX_VIVADO}/data/ip/xpm/xpm_VCOMP.vhd'}
-#vhdl_package_skip_order = { xpm = '{XILINX_VIVADO}/data/ip/xpm/xpm_VCOMP.vhd', unisim = "{XILINX_VIVADO}/data/vhdl/src/unisims/unisim_VCOMP.vhd"}
+# vhdl_package_skip_order = { xpm = '{XILINX_VIVADO}/data/ip/xpm/xpm_VCOMP.vhd'}
+vhdl_package_skip_order = { xpm = '{XILINX_VIVADO}/data/ip/xpm/xpm_VCOMP.vhd', unisim = "{XILINX_VIVADO}/data/vhdl/src/unisims/unisim_VCOMP.vhd"}
