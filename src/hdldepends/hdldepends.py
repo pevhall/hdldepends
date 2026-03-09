@@ -70,6 +70,7 @@ TOML_KEY_VER_SEP = "@"
 HDL_DEPENDS_VERSION_NUM = 1.03
 
 
+
 # Utility functions {{{
 def path_abs_from_dir(dir: Path, loc: Path):
     loc_str = str(loc).format(**os.environ)
@@ -319,56 +320,17 @@ class Lookup:  # {{{
         self.x_device = x_device
 
     def filter_x_files_by_requirements(self):
-        """Remove X files that don't match x_tool_version and x_device requirements"""
-        if not self.x_tool_version or not self.x_device:
-            log.debug("No X requirements set, skipping X file filtering")
-            return
+        """Check X files against x_tool_version and x_device requirements.
+        
+        For duplicate X files (ConflictFileObj): Filters to keep best match with priority:
+          1. Exact Vivado version match
+          2. Exact part number match
+        
+        For single X files: Only warns if there's a mismatch, does not remove.
+        """
+        pass
 
-        files_to_remove = []
-
-        for loc, f_obj_lookup in list(self.loc_2_file_obj.items()):
-            # Handle both FileObj and ConflictFileObj
-            f_objs = []
-            if isinstance(f_obj_lookup, ConflictFileObj):
-                f_objs = list(f_obj_lookup.get_f_objs())
-            elif isinstance(f_obj_lookup, FileObj):
-                f_objs = [f_obj_lookup]
-
-            for f_obj in f_objs:
-                if isinstance(f_obj, FileObjX):  # FileObjXBd or FileObjXXci
-                    if not f_obj.matches_x_requirements(self.x_tool_version, self.x_device):
-                        log.info(
-                            f"Filtering out {f_obj.file_type_str} file {loc} - doesn't match X requirements "
-                            f"(file: {f_obj.x_tool_version}/{f_obj.x_device}, "
-                            f"required: {self.x_tool_version}/{self.x_device})"
-                        )
-                        files_to_remove.append((loc, f_obj))
-
-        # Remove filtered files from all dictionaries
-        for loc, f_obj in files_to_remove:
-            # Remove from loc_2_file_obj
-            if loc in self.loc_2_file_obj:
-                del self.loc_2_file_obj[loc]
-
-            # Remove from entity_name_2_file_obj
-            for entity in f_obj.entities:
-                if entity in self.entity_name_2_file_obj:
-                    stored_obj = self.entity_name_2_file_obj[entity]
-                    if isinstance(stored_obj, FileObj) and stored_obj.loc == loc:
-                        del self.entity_name_2_file_obj[entity]
-                    elif isinstance(stored_obj, ConflictFileObj):
-                        # Remove from conflict, delete entire entry if no conflicts remain
-                        if loc in stored_obj.loc_2_file_obj:
-                            del stored_obj.loc_2_file_obj[loc]
-                            if len(stored_obj.loc_2_file_obj) == 1:
-                                # Only one file left, replace ConflictFileObj with FileObj
-                                remaining = list(stored_obj.loc_2_file_obj.values())[0]
-                                self.entity_name_2_file_obj[entity] = remaining
-                            elif len(stored_obj.loc_2_file_obj) == 0:
-                                del self.entity_name_2_file_obj[entity]
-
-
-# }}}
+#}}}
 
 # Constructs to handle files {{{
 
@@ -402,9 +364,19 @@ class FileObj:
         self.f_type: Optional[FileObjType] = None
         self.level = None
         self.ver = ver
-        self.direct_deps: List[Path] = []
-        self.x_tool_version = ""
-        self.x_device = ""
+        self.lib_inherited_from: Optional[Path] = None
+        self.direct_deps : List = []
+        self.x_tool_version = ''
+        self.x_device = ''
+        self.update_modification_time()
+
+    def update_modification_time(self):
+        try:
+            self.exists = True
+            self.modification_time =  self.get_modification_time_on_disk()
+        except FileNotFoundError:
+            self.exists = False
+            self.modification_time = None
 
     def requires_update(self):
         return self.get_modification_time_on_disk() != self.modification_time
@@ -447,7 +419,11 @@ class FileObj:
                 f_obj = FileObjDirect(ddep_loc)
                 look.loc_2_file_obj[ddep_loc] = f_obj
 
-    def get_file_deps(self, look: Lookup) -> List["FileObj"]:
+    def inherit_library_if_needed(self, parent_lib: str, parent_loc: Path):
+        """Allow subclasses to inherit library from parent. Default does nothing."""
+        pass
+
+    def get_file_deps(self, look: Lookup) -> List['FileObj']:
         file_deps = []
         for e in self.entity_deps:
             try:
@@ -457,12 +433,11 @@ class FileObj:
                 if isinstance(f_obj, FileObjVhdl) and isinstance(self, FileObjVhdl):
                     log.error(f'{f_obj.loc} appers to be in wrong library wanted {e.lib} but got {f_obj.lib}. Requesting file is {self.loc}')
                     raise err
-                # if e.lib == LIB_DEFAULT:
-                #     raise err
-                # name = Name(LIB_DEFAULT, e.name)
-                # f_obj = look.get_entity(name, self)
 
             if f_obj is not None:
+                # Allow the dependency to inherit library from this file if applicable
+                if self.lib is not None:
+                    f_obj.inherit_library_if_needed(self.lib, self.loc)
                 self._add_to_f_deps(file_deps, f_obj)
 
         return file_deps
@@ -544,6 +519,7 @@ class FileObjVerilogInclude(FileObj):
     def parse_file_again(self) -> FileObj:
         return self
 
+
 class FileObjDirect(FileObj):
     def __init__(self, loc: Path):
         super().__init__(loc, None)
@@ -564,28 +540,32 @@ class FileObjX(FileObj):
         self.x_device = x_device
 
     def matches_x_requirements(self, required_x_tool_version: str, required_x_device: str) -> bool:
-        """Check if this X file matches the required tool version and device"""
+        """Check if this X file matches the required tool version and device.
+        Returns True if matches, False otherwise. Used for filtering duplicates."""
         if not required_x_tool_version or not required_x_device:
             return True  # No requirements specified, accept all
 
         if not self.x_tool_version or not self.x_device:
             return True  # File has no X info, assume compatible
 
-        # Check tool version - file version must match required version
+        # Check both tool version and device match
+        return self.x_tool_version == required_x_tool_version and self.x_device == required_x_device
+
+    def check_x_requirements_with_warning(self, required_x_tool_version: str, required_x_device: str):
+        """Check X requirements and log warnings for mismatches. Does not filter."""
+        if not required_x_tool_version or not required_x_device:
+            return  # No requirements specified
+
+        if not self.x_tool_version or not self.x_device:
+            return  # File has no X info
+
+        # Check tool version - warn if mismatch
         if self.x_tool_version != required_x_tool_version:
-            log.debug(f"File {self.loc} x_tool_version {self.x_tool_version}, required {required_x_tool_version}")
-            return False
+            log.warning(f"File {self.loc} has x_tool_version {self.x_tool_version}, but required {required_x_tool_version}")
 
-        # Check device match
+        # Check device match - warn if mismatch
         if self.x_device != required_x_device:
-            log.debug(f"File {self.loc} x_device {self.x_device} != required {required_x_device}")
-                # temp = ','.join([str(cf_obj.loc) for cf_obj in f_obj.get_f_objs()])
-                # log.warning("Conflicted file objects: "+temp) #HERE
-                # return True
-            return False
-
-        return True
-
+            log.warning(f"File {self.loc} has x_device {self.x_device}, but required {required_x_device}")
 
 class FileObjXBd(FileObjX):
     def __init__(self, loc: Path, ver: Optional[str], x_tool_version: str, x_device: str):
@@ -611,9 +591,21 @@ class FileObjXXci(FileObjX):
     def file_type_str(self) -> str:
         return "X_XCI"
 
-    def parse_file_again(self) -> FileObj:
-        assert self.loc is Path
-        assert self.ver is str or self.ver is None
+    def inherit_library_if_needed(self, parent_lib: str, parent_loc: Path):
+        """Inherit library from the VHDL file that instantiates this XCI."""
+        if self.lib is None or self.lib == LIB_DEFAULT:
+            if self.lib_inherited_from is None:
+                log.info(f"XCI {self.loc} inheriting library '{parent_lib}' from {parent_loc}")
+                self.lib = parent_lib
+                self.lib_inherited_from = parent_loc
+            elif self.lib != parent_lib:
+                log.warning(
+                    f"XCI {self.loc} already inherited library '{self.lib}' from {self.lib_inherited_from}, ignoring '{parent_lib}' from {parent_loc}"
+                )
+
+    def parse_file_again(self)->FileObj:
+        assert isinstance(self.loc,Path), f'{self.loc=}'
+        assert isinstance(self.ver, str) or self.ver is None, f'{self.ver=}'
         return parse_x_xci_file(None, loc=self.loc, ver=self.ver)
 
 
@@ -727,6 +719,9 @@ class FileObjVhdl(FileObj):
                         pass
                 if f_obj is not None:
                     found = True
+                    # Allow the dependency to inherit library from this VHDL file
+                    if self.lib is not None:
+                        f_obj.inherit_library_if_needed(self.lib, self.loc)
                     file_deps.append(f_obj)
                 else:
                     for f_obj in file_package_deps:
@@ -783,9 +778,9 @@ class ConflictFileObj:
                 can_filter_on_version = False
 
         log.error(f"Conflict on key {key} could not resolve between")
-        log.error(f"  (please resolve buy adding the one of the files to the prject toml):")
+        log.error(f"  (please resolve by adding one of the files to the project toml):")
         if can_filter_on_version:
-            log.error(f"  (or you can filter using x_tool_version)")
+            log.error(f"  (or you can filter using x_tool_version and x_device)")
         for loc, f_obj in self.loc_2_file_obj.items():
             x_info = ""
             if len(f_obj.x_tool_version) != 0 or len(f_obj.x_device) != 0:
@@ -794,48 +789,98 @@ class ConflictFileObj:
 
     def get_f_objs(self):
         return self.loc_2_file_obj.values()
+    
+    
+    def _pick_closest_version(self, candidates: list, target_version: str) -> FileObj:
+        """Pick the candidate with the closest version to target_version.
+        
+        Preference order:
+        1. Highest version that is still <= target (best upgrade candidate)
+        2. Lowest version that is > target (least downgrade distance)
+        """
+        below = [f for f in candidates if f.x_tool_version <= target_version]
+        above = [f for f in candidates if f.x_tool_version > target_version]
+        
+        if below:
+            # Pick the highest version that's still at or below target
+            below.sort(key=lambda f: f.x_tool_version, reverse=True)
+            return below[0]
+        else:
+            # No lower versions available — pick the closest higher version
+            above.sort(key=lambda f: f.x_tool_version)
+            return above[0]
 
     def resolve_conflict(self, x_tool_version: str, x_device: str) -> Optional[FileObj]:
-        log.debug(f"resolve_conflict ({x_tool_version}, {x_device})")
+        """Resolve conflict by picking the best matching X file.
+        
+        Priority:
+        1. Exact Vivado version AND exact part number match
+        2. Exact Vivado version match (any part)
+        3. Closest Vivado version with exact part match (prefer lower versions)
+        4. Closest Vivado version with any part (prefer lower versions)
+        
+        Lower versions are preferred over higher versions because upgrading
+        is more reliably supported than downgrading.
+        
+        Returns None if conflict cannot be resolved.
+        """
+        log.debug(f'resolve_conflict ({x_tool_version}, {x_device})')
+        
         if len(x_tool_version) == 0 or len(x_device) == 0:
             return None
-        chosen = None
-        got_version = False
-        matched = False
+            
+        # Check all files have version info
         for f_obj in self.loc_2_file_obj.values():
-            if len(f_obj.x_tool_version) == 0 or len(f_obj.x_device) == 0:
+            if len(f_obj.x_tool_version) == 0:
+                log.debug(f"File {f_obj.loc} has no x_tool_version, cannot resolve conflict")
                 return None
 
-            f_obj_got_version = x_tool_version == f_obj.x_tool_version
-            f_obj_matched = got_version and x_device == f_obj.x_device
-
-            if f_obj_matched and matched:
-                log.error(f"Got a x_tool_version and x_device match for both files {f_obj.loc} and {chosen.loc} cannot resolve this issue")
-                return None
-
-            if x_tool_version < f_obj.x_tool_version:
-                log.debug(f"File {f_obj.loc} x_tool_version to low got {f_obj.x_tool_version} wanted {x_tool_version}")
-                continue
-
-            if chosen is not None:
-                if f_obj.x_tool_version < chosen.x_tool_version:
-                    continue
-                if f_obj.x_tool_version == chosen.x_tool_version:
-                    if f_obj.x_device != x_device:
-                        continue
-
-            got_version = f_obj_got_version
-            f_obj_matched = f_obj_matched
-            chosen = f_obj
-            if matched:
-                break
-
-        if not got_version:
-            log.warning(f"File has x_tool_version got {chosen.x_tool_version} but wanted {x_tool_version} please create an updated version")
+        # Categorise files by match quality
+        exact_match = []      # version AND device match
+        version_match = []    # only version matches
+        device_match = []     # only device matches  
+        no_match = []         # neither matches
+        
+        for f_obj in self.loc_2_file_obj.values():
+            ver_matches = f_obj.x_tool_version == x_tool_version
+            dev_matches = f_obj.x_device == x_device
+            
+            if ver_matches and dev_matches:
+                exact_match.append(f_obj)
+            elif ver_matches:
+                version_match.append(f_obj)
+            elif dev_matches:
+                device_match.append(f_obj)
+            else:
+                no_match.append(f_obj)
+        
+        # Pick best match based on priority
+        chosen = None
+        
+        if len(exact_match) == 1:
+            chosen = exact_match[0]
+            log.debug(f"Found exact match: {chosen.loc}")
+        elif len(exact_match) > 1:
+            log.error(f"Multiple exact matches for version {x_tool_version} and device {x_device}, cannot resolve")
+            return None
+        elif len(version_match) == 1:
+            chosen = version_match[0]
+            log.warning(f"Using {chosen.loc} with matching version {x_tool_version} but different device {chosen.x_device} (wanted {x_device})")
+        elif len(version_match) > 1:
+            chosen = version_match[0]
+            log.warning(f"Multiple files match version {x_tool_version}, picking {chosen.loc} (device: {chosen.x_device}, wanted: {x_device})")
+        elif len(device_match) >= 1:
+            # No version match but device matches - pick closest version,
+            # preferring lower versions (upgradeable) over higher ones
+            chosen = self._pick_closest_version(device_match, x_tool_version)
+            log.warning(f"No version match, using {chosen.loc} with matching device {x_device} but version {chosen.x_tool_version} (wanted {x_tool_version})")
         else:
-            log.warning(f"File has correct version but wrong x_device got {chosen.x_device} but wanted {x_device} please create an updated version")
-
+            # No matches at all - pick closest version, preferring lower
+            chosen = self._pick_closest_version(no_match, x_tool_version)
+            log.warning(f"No matching version or device, using {chosen.loc} (version: {chosen.x_tool_version}, device: {chosen.x_device})")
+        
         return chosen
+
 
 
 FileObjLookup = Union[ConflictFileObj, FileObj]
@@ -1763,6 +1808,43 @@ class LookupSingular(Lookup):  # {{{
         else:
             d[key] = f_obj
 
+    def filter_x_files_by_requirements(self):
+        """Check X files against x_tool_version and x_device requirements.
+        
+        For duplicate X files (ConflictFileObj): Filters to keep best match with priority:
+          1. Exact Vivado version match
+          2. Exact part number match
+        
+        For single X files: Only warns if there's a mismatch, does not remove.
+        """
+        if not self.x_tool_version or not self.x_device:
+            log.debug("No X requirements set, skipping X file filtering")
+            return
+
+        for loc, f_obj_lookup in list(self.loc_2_file_obj.items()):
+            if isinstance(f_obj_lookup, ConflictFileObj):
+                # Multiple files with same entity - try to resolve by picking best match
+                resolved = f_obj_lookup.resolve_conflict(self.x_tool_version, self.x_device)
+                if resolved is not None:
+                    # Successfully resolved - replace ConflictFileObj with the chosen FileObj
+                    self.loc_2_file_obj[loc] = resolved
+                    log.info(f"Resolved X file conflict for {loc}, chose version {resolved.x_tool_version}/{resolved.x_device}")
+                    
+                    # Also update entity_name_2_file_obj
+                    for entity in resolved.entities:
+                        if entity in self.entity_name_2_file_obj:
+                            self.entity_name_2_file_obj[entity] = resolved
+                else:
+                    # Could not resolve - warn about all conflicting files
+                    for f_obj in f_obj_lookup.get_f_objs():
+                        if isinstance(f_obj, FileObjX):
+                            f_obj.check_x_requirements_with_warning(self.x_tool_version, self.x_device)
+                            
+            elif isinstance(f_obj_lookup, FileObj):
+                if isinstance(f_obj_lookup, FileObjX):
+                    # Single file - just warn if mismatch, don't remove
+                    f_obj_lookup.check_x_requirements_with_warning(self.x_tool_version, self.x_device)
+
     @staticmethod
     def toml_loc_to_pickle_loc(toml_loc: Path) -> Path:
         pickle_loc = toml_loc.with_name("." + toml_loc.stem + ".pickle")
@@ -2486,6 +2568,16 @@ class LookupMulti(LookupSingular):  # {{{
                 return f_obj
         return None
 
+    def loc_to_file_obj(self, loc) -> Optional[FileObj]:
+        f_obj = LookupSingular.loc_to_file_obj(self, loc)
+        if f_obj is not None:
+            return f_obj
+        for sub in self.look_subs:
+            f_obj = sub.loc_to_file_obj(loc)
+            if f_obj is not None:
+                return f_obj
+        return None
+
     def set_x_tool_version(self, x_tool_version: str):
         for sub in self.look_subs:
             sub.set_x_tool_version(x_tool_version)
@@ -2956,8 +3048,7 @@ class LookupPrj(LookupMulti):  # {{{
         # Add coefficient files from XCI files (extracted from direct_deps)
         for f_obj in self.compile_order:
             if isinstance(f_obj, FileObjXXci):
-                for direct_dep_loc in f_obj.direct_deps:
-                    direct_dep = self.loc_to_file_obj(direct_dep_loc)
+                for direct_dep in f_obj.direct_deps:
                     if isinstance(direct_dep, FileObjDirect):
                         coef_file_abs = resolve_abs_path(direct_dep.loc)
                         if coef_file_abs in seen_external_files:
@@ -3062,8 +3153,8 @@ def create_lookup_from_toml(
         c_locs = make_list(c_locs)
         for loc in c_locs:
             loc = Path(loc)
-            if loc ==  toml_loc or (work_dir/loc) == toml_loc:
-                raise Exception(f'ERROR config file {toml_loc} references itself')
+            if loc == toml_loc or (work_dir / loc) == toml_loc:
+                raise Exception(f"ERROR config file {toml_loc} references itself")
             look_subs.append(
                 create_lookup_from_toml(loc, work_dir, attemp_read_pickle=attemp_read_pickle, write_pickle=write_pickle, top_lib=top_lib)
             )
@@ -3140,7 +3231,7 @@ def create_lookup_from_toml(
     else:
         inst = LookupSingular.create_from_config_dict(config, work_dir=work_dir, top_lib=top_lib, file_lists=file_lists)
 
-    log.debug(f"toml_loc {toml_loc}")
+    log.debug(f'toml_loc {toml_loc}')
     time = get_file_modification_time(toml_loc)
     assert time is not None
     inst.toml_modification_time = time
@@ -3265,7 +3356,7 @@ def hdldepends():
     if x_device is not None:
         look.set_x_device(x_device)
 
-    # Filter out X files that don't match requirements
+    # Check X files against requirements (warns on mismatches)
     look.filter_x_files_by_requirements()
 
     if args.top_file_type:
@@ -3346,5 +3437,3 @@ def hdldepends():
 if __name__ == "__main__":
     hdldepends()
 # }}}
-
-
