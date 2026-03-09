@@ -789,15 +789,38 @@ class ConflictFileObj:
 
     def get_f_objs(self):
         return self.loc_2_file_obj.values()
+    
+    
+    def _pick_closest_version(self, candidates: list, target_version: str) -> FileObj:
+        """Pick the candidate with the closest version to target_version.
+        
+        Preference order:
+        1. Highest version that is still <= target (best upgrade candidate)
+        2. Lowest version that is > target (least downgrade distance)
+        """
+        below = [f for f in candidates if f.x_tool_version <= target_version]
+        above = [f for f in candidates if f.x_tool_version > target_version]
+        
+        if below:
+            # Pick the highest version that's still at or below target
+            below.sort(key=lambda f: f.x_tool_version, reverse=True)
+            return below[0]
+        else:
+            # No lower versions available — pick the closest higher version
+            above.sort(key=lambda f: f.x_tool_version)
+            return above[0]
 
-    def resolve_conflict(self, x_tool_version : str, x_device : str) -> Optional[FileObj]:
+    def resolve_conflict(self, x_tool_version: str, x_device: str) -> Optional[FileObj]:
         """Resolve conflict by picking the best matching X file.
         
         Priority:
-          1. Exact Vivado version AND exact part number match
-          2. Exact Vivado version match (any part)
-          3. Closest Vivado version with exact part match
-          4. Closest Vivado version (any part)
+        1. Exact Vivado version AND exact part number match
+        2. Exact Vivado version match (any part)
+        3. Closest Vivado version with exact part match (prefer lower versions)
+        4. Closest Vivado version with any part (prefer lower versions)
+        
+        Lower versions are preferred over higher versions because upgrading
+        is more reliably supported than downgrading.
         
         Returns None if conflict cannot be resolved.
         """
@@ -844,21 +867,20 @@ class ConflictFileObj:
             chosen = version_match[0]
             log.warning(f"Using {chosen.loc} with matching version {x_tool_version} but different device {chosen.x_device} (wanted {x_device})")
         elif len(version_match) > 1:
-            # Multiple version matches - try to pick one with closest device or just pick first
             chosen = version_match[0]
             log.warning(f"Multiple files match version {x_tool_version}, picking {chosen.loc} (device: {chosen.x_device}, wanted: {x_device})")
         elif len(device_match) >= 1:
-            # No version match but device matches - pick closest version
-            device_match.sort(key=lambda f: f.x_tool_version, reverse=True)
-            chosen = device_match[0]
+            # No version match but device matches - pick closest version,
+            # preferring lower versions (upgradeable) over higher ones
+            chosen = self._pick_closest_version(device_match, x_tool_version)
             log.warning(f"No version match, using {chosen.loc} with matching device {x_device} but version {chosen.x_tool_version} (wanted {x_tool_version})")
         else:
-            # No matches at all - pick closest version
-            no_match.sort(key=lambda f: f.x_tool_version, reverse=True)
-            chosen = no_match[0]
+            # No matches at all - pick closest version, preferring lower
+            chosen = self._pick_closest_version(no_match, x_tool_version)
             log.warning(f"No matching version or device, using {chosen.loc} (version: {chosen.x_tool_version}, device: {chosen.x_device})")
         
         return chosen
+
 
 
 FileObjLookup = Union[ConflictFileObj, FileObj]
