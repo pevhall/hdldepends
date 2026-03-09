@@ -5,8 +5,6 @@ import sys
 import glob
 import json
 import pickle
-import string
-import fnmatch
 import argparse
 import subprocess
 import xml.etree.ElementTree as xml_et
@@ -67,7 +65,7 @@ class log:
 
 TOML_KEY_VER_SEP = "@"
 
-HDL_DEPENDS_VERSION_NUM = 1.03
+HDL_DEPENDS_VERSION_NUM = 1.04
 
 
 
@@ -945,7 +943,7 @@ vhdl_regex_patterns = {
         # r"\w+\s*:\s*entity\s+[\w.]+(?:\(\w+\))?\s*(?:generic\s+map\s*\([^)]*(?:\([^)]*\)[^)]*)*\))?\s*port\s+map\s*\([^)]*(?:\([^)]*\)[^)]*)*\)\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
-    "package_use": re.compile(r"\buse\s+(\w+)\.(\w+)\.\w+\s*;", re.IGNORECASE | re.MULTILINE),
+    "package_use": re.compile(r"\buse\s+(\w+)\.(\w+)(?:\.\w+)?\s*;", re.IGNORECASE | re.MULTILINE),
     "c_coef_file": re.compile(r'_?attribute\s+C_COEF_FILE?\s+of\s+(\w+)\s*:\s*label\s+is\s+"([^"]+)"\s*;', re.IGNORECASE),
     "is_du_within_envelope": re.compile(r'_?attribute\s+is_du_within_envelope?\s+of\s+(\w+)\s*:\s*label\s+is\s+"true"\s*;', re.IGNORECASE),
 }

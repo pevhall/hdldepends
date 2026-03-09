@@ -8,6 +8,7 @@ library unisim;
 use unisim.vcomponents.all;
 
 use work.del_pkg.all;
+use work.del_ipkg;
 
 entity del is
   generic (
