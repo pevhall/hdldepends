@@ -354,7 +354,7 @@ def string_to_FileObjType(s: str) -> FileObjType:
 
 class FileObj:
     def __init__(self, loc: Path, ver: Optional[str] = None):
-        self.loc = resolve_abs_path(loc)
+        self.loc : Path = resolve_abs_path(loc)
         self.lib = None  # LIB_DEFAULT
         self.entities: List[Name] = []
         self.entity_deps: List[Name] = []
@@ -934,7 +934,7 @@ vhdl_regex_patterns = {
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "component_inst": re.compile(
-        r"\s*(\w+)\s*:\s*(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
+        r"\s*(\w+)\s*:(?:\s*component)\s*(\w+)(?:\s*generic\s*map\s*\(.*?\))?\s*port\s*map\s*\(.*?\)\s*;",
         re.DOTALL | re.IGNORECASE | re.MULTILINE,
     ),
     "direct_inst": re.compile(
@@ -2278,7 +2278,7 @@ class LookupSingular(Lookup):  # {{{
             entity_name = Name(LIB_DEFAULT, loc.stem)
             f_obj.entities.append(entity_name)
             self.entity_name_2_file_obj[entity_name] = f_obj
-            self.loc_2_file_obj[loc] = f_obj
+            self.loc_2_file_obj[f_obj.loc] = f_obj
 
     def register_x_bd_file_list(self, x_bd_file_list: List[Tuple[Path, str]]):
         self.x_bd_file_list = x_bd_file_list
@@ -2653,7 +2653,7 @@ class LookupMulti(LookupSingular):  # {{{
     ):
         # def get_loc(self, loc: Path, lib_to_add_to_if_not_found: Optional[str] = None):
         try:
-            return super().get_loc(loc)
+            return LookupSingular.get_loc(self, loc)
         except KeyError:
             f_obj = self._get_loc_from_common(loc)
             if f_obj is None:
@@ -2692,6 +2692,7 @@ class LookupMulti(LookupSingular):  # {{{
             if l_common.has_loc(loc):
                 f_obj = l_common.get_loc(loc)
                 assert isinstance(f_obj, FileObj)
+                return f_obj
         return None
 
     def check_if_skip_from_order(self, loc: Path):
@@ -2968,7 +2969,7 @@ class LookupPrj(LookupMulti):  # {{{
             assert f_obj is not None
             if isinstance(f_obj, FileObjVhdl):
                 log.info(f"top_entity {name} found in vhdl file {f_obj.loc}")
-                self.set_top_file(f_obj.loc, lib=f_obj.lib, ver=f_obj.ver)
+                self.set_top_file(f_obj.loc, f_type=f_obj.f_type, lib=f_obj.lib, ver=f_obj.ver)
             else:
                 log.info(f"top_entity {name} found in file {f_obj.loc}")
                 self.set_top_file(f_obj.loc, ver=f_obj.ver)
