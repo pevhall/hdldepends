@@ -1354,7 +1354,7 @@ def verilog_extract_package_imports(verilog_code):
     return packages
 
 def verilog_extract_module_declarations(verilog_code):
-    module_declaration_regex = r"module\s+(\w+)\s*(?:\#\s*\([^)]*\))?\s*\("  # )
+    module_declaration_regex = r"module\s+(\w+)\s*[#(;]"
     matches = re.finditer(module_declaration_regex, verilog_code)
     declarations = []
 
