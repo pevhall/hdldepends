@@ -394,6 +394,7 @@ def build_resolver(toml_locs, work_dir: Optional[Path] = None, top_lib: Optional
     for loc, ver in inc_files:
         resolver.add(SourceFile(loc, FileType.VERILOG_INCLUDE, ver=ver))
     inc_locs = [loc for loc, _ver in inc_files]
+    resolver.verilog_include_dirs = list(inc_dirs)
     for lib, loc, ver in vhdl:
         resolver.add(parse_vhdl_file(loc, lib=lib, ver=ver))
     for loc, ver in verilog:
@@ -407,3 +408,46 @@ def build_resolver(toml_locs, work_dir: Optional[Path] = None, top_lib: Optional
         sf.provides.append(Name(LIB_DEFAULT, Path(loc).stem))
         resolver.add(sf)
     return resolver
+
+
+#: File extension -> FileType, used to pick a parser when a top file is named by
+#: path but isn't already part of the project (see add_top_file_by_path).
+TOP_FILE_EXT_TYPES: Dict[str, FileType] = {
+    ".vhd": FileType.VHDL,
+    ".vhdl": FileType.VHDL,
+    ".v": FileType.VERILOG,
+    ".sv": FileType.VERILOG,
+    ".bd": FileType.X_BD,
+    ".xci": FileType.X_XCI,
+}
+
+
+def add_top_file_by_path(
+    resolver: Resolver, loc: Path, lib: str = LIB_DEFAULT, ver: Optional[str] = None
+) -> SourceFile:
+    """Parse ``loc`` and add it to an already-built ``resolver``, returning the
+    :class:`~hdldepends.model.SourceFile`.
+
+    This restores the old ``--top-file-type`` auto-add: a top file (typically a
+    testbench) can be named on the command line / API without also listing it in
+    the config. The parser is chosen from ``loc``'s extension; an unrecognised
+    extension raises :class:`~hdldepends.errors.ConfigError`.
+    """
+    ftype = TOP_FILE_EXT_TYPES.get(loc.suffix.lower())
+    if ftype is None:
+        known = " / ".join(sorted(TOP_FILE_EXT_TYPES))
+        raise ConfigError(
+            f"cannot infer a file type for top file {loc} from its extension "
+            f"{loc.suffix!r}; expected one of {known}"
+        )
+    if ftype == FileType.VHDL:
+        sf = parse_vhdl_file(loc, lib=lib, ver=ver)
+    elif ftype == FileType.VERILOG:
+        inc_locs = [f.loc for f in resolver.by_loc.values() if f.ftype == FileType.VERILOG_INCLUDE]
+        sf = parse_verilog_file(loc, ver, resolver.verilog_include_dirs, inc_locs)
+    elif ftype == FileType.X_BD:
+        sf = parse_x_bd_file(loc, ver)
+    else:  # FileType.X_XCI
+        sf = parse_x_xci_file(loc, ver)
+    resolver.add(sf)
+    return sf

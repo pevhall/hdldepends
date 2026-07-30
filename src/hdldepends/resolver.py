@@ -92,6 +92,10 @@ class Resolver:
         self.ignore_components: Set[str] = set()
         self.skip_locs: Set[Path] = set()
         self.init_files: List[SourceFile] = []
+        #: Verilog `include search directories gathered from the config, kept so a
+        #: Verilog top file added after the fact (see config.add_top_file_by_path)
+        #: can resolve its `include directives the same way project files do.
+        self.verilog_include_dirs: List[Path] = []
         self.tag_2_ext: Dict[str, List[Path]] = {}
         self.x_tool_version: str = ""
         self.x_device: str = ""

@@ -1,0 +1,19 @@
+# Config for the Python API example (see analyse_example.py).
+#
+# Only the synthesisable RTL lives here. The testbench under sim/ is
+# deliberately left out -- the API example adds it on the fly with `top_file`.
+
+# Standard libraries provided by the simulator/synthesiser; not part of the
+# project's own compile order.
+ignore_libs:
+  - ieee
+  - std
+
+# The config's default top, used when analyse() is called with no explicit top.
+top_entity: counter
+
+# Synthesisable sources, compiled into the default `work` library.
+vhdl_files:
+  work:
+    - ./rtl/counter_pkg.vhd
+    - ./rtl/counter.vhd

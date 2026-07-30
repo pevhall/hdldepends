@@ -11,14 +11,14 @@ forced-init-files behaviour are defined exactly once and shared by both
 entry points.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
-from .config import build_resolver
+from .config import add_top_file_by_path, build_resolver
 from .constants import LIB_DEFAULT
 from .model import Name, SourceFile
-from .output import compile_order_to_dicts
+from .output import compile_order_to_dicts, format_compile_order, print_compile_order
 from .resolver import Resolver
 from .util import path_abs_from_dir
 
@@ -78,10 +78,30 @@ class AnalysisResult:
     #: entry per compiled file, with ``is_top`` set on the last one.
     compile_order: List[Dict[str, Any]]
 
+    #: The underlying resolved :class:`~hdldepends.model.SourceFile` order
+    #: (compiled files only -- no EXTERNAL entries), retained so
+    #: :meth:`format_compile_order` / :meth:`print_compile_order` can render the
+    #: same tree-indented view the CLI prints. Deliberately excluded from
+    #: :meth:`to_dict` (it is not JSON-safe); ``compile_order`` above is the
+    #: serializable form.
+    source_files: List[SourceFile] = field(default_factory=list, repr=False)
+
     def to_dict(self) -> Dict[str, Any]:
         """The same top-level shape as the ``compile-order-json`` file, e.g.
         for ``json.dump``: ``{"files": self.compile_order}``."""
         return {"files": self.compile_order}
+
+    def format_compile_order(self) -> str:
+        """The human-readable, tree-indented compile-order listing (identical to
+        what the CLI prints), returned as a string. Compiled files only; the
+        leading EXTERNAL entries carried by :attr:`compile_order` are not shown,
+        matching the CLI's ``print_compile_order``."""
+        return format_compile_order(self.source_files)
+
+    def print_compile_order(self) -> None:
+        """Print :meth:`format_compile_order` to stdout -- the same output the
+        CLI emits for the resolved compile order."""
+        print_compile_order(self.source_files)
 
 
 def analyse(
@@ -104,9 +124,11 @@ def analyse(
         (TOML / JSON / YAML, same as the CLI's positional ``config_file``
         arguments).
     :param top_entity: top-level entity/module name (``--top-entity``).
-    :param top_file: path to the top-level file; must already be reachable
-        from ``config_files`` (``--top-file``). A relative path is anchored
-        to ``work_dir``, like relative ``config_files``.
+    :param top_file: path to the top-level file (``--top-file``). If it is not
+        already part of the project, it is parsed and added (its file type is
+        inferred from the extension), so a testbench top level need not be listed
+        in the config just to run a basic compile order. A relative path is
+        anchored to ``work_dir``, like relative ``config_files``.
     :param top_lib: default VHDL library for ``top_entity`` and for
         unqualified names in the config (``--top-vhdl-lib``); defaults to
         :data:`~hdldepends.constants.LIB_DEFAULT`.
@@ -116,10 +138,12 @@ def analyse(
         (``--x-device``).
     :param work_dir: directory relative ``config_files`` and a relative
         ``top_file`` are resolved against; defaults to the current directory.
-    :raises hdldepends.errors.ConfigError: the config fails validation.
+    :raises hdldepends.errors.ConfigError: the config fails validation, or a
+        ``top_file`` not already in the project has an extension no parser
+        recognises.
     :raises OSError: a config or referenced source file can't be read.
     :raises ValueError: no top could be determined, or an explicitly named
-        top (file or entity) does not resolve to a project file.
+        top entity does not resolve to a project file.
     """
     top_lib_effective = top_lib or LIB_DEFAULT
     files = [config_files] if isinstance(config_files, (str, Path)) else list(config_files)
@@ -141,7 +165,10 @@ def analyse(
         loc = path_abs_from_dir(resolved_work_dir, Path(top_file)).resolve()
         top_file_sf = resolver.by_loc.get(loc)
         if top_file_sf is None:
-            raise ValueError(f"top file {top_file} is not in the project")
+            # Not listed in the config: parse and add it (inferring the file type
+            # from its extension), so a testbench top level need not be added to
+            # the config just to run a basic simulation compile order.
+            top_file_sf = add_top_file_by_path(resolver, loc, lib=top_lib_effective)
 
     top_entity_name = Name(top_lib_effective, top_entity) if top_entity else None
     top = select_top(resolver, top_file_sf, top_entity_name)
@@ -152,4 +179,7 @@ def analyse(
         )
 
     order = apply_forced_init_files(resolver, resolver.compile_order(top))
-    return AnalysisResult(compile_order=compile_order_to_dicts(order, resolver.tag_2_ext))
+    return AnalysisResult(
+        compile_order=compile_order_to_dicts(order, resolver.tag_2_ext),
+        source_files=order,
+    )

@@ -7,6 +7,7 @@ file types and external-file handling.
 
 from pathlib import Path
 
+import hdldepends
 from hdldepends.config import build_resolver
 from hdldepends.model import Name
 
@@ -70,3 +71,26 @@ def test_vhdl2008_ext_exclude(monkeypatch):
     assert [p.name for p in resolver.tag_2_ext["xdc"]] == ["pins.xdc"]
     assert [p.name for p in resolver.tag_2_ext["tcl"]] == ["build.tcl"]
     assert not any(p.suffix in (".xdc", ".tcl") for p in resolver.by_loc)
+
+
+# --- examples/python_api (the Python API walkthrough) ----------------------
+
+def test_python_api_example():
+    # Drive the example the way analyse_example.py does, so the example's
+    # documented behaviour stays verified.
+    api_dir = EXAMPLES / "python_api"
+
+    # 1. Config's own top (top_entity: counter): counter_pkg before counter.
+    result = hdldepends.analyse("hdldeps.yaml", work_dir=api_dir)
+    stems = [Path(e["path"]).stem for e in result.compile_order]
+    assert stems == ["counter_pkg", "counter"]
+    assert result.compile_order[-1]["is_top"] is True
+    # the human-readable listing is available as a string / via stdout
+    assert result.format_compile_order().startswith("compile order:")
+
+    # 2. Testbench top via top_file -- auto-added (not in hdldeps.yaml) and its
+    #    dependencies pulled in ahead of it.
+    tb = hdldepends.analyse("hdldeps.yaml", work_dir=api_dir, top_file="sim/counter_tb.vhd")
+    tb_stems = [Path(e["path"]).stem for e in tb.compile_order]
+    assert tb_stems == ["counter_pkg", "counter", "counter_tb"]
+    assert tb.compile_order[-1]["is_top"] is True

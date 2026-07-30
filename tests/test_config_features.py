@@ -190,9 +190,9 @@ def test_top_entity_lib_dot_name_form_names_library_explicitly(tmp_path, monkeyp
 
 
 def test_top_entity_multi_dot_raises_configerror_not_raw_valueerror(tmp_path, monkeypatch):
-    # "a.b.c" makes str_to_name raise ValueError (more than one '.'); the config
-    # loader must wrap it as a ConfigError naming the config file, not let the
-    # ValueError escape as a raw traceback.
+    # "a.b.c" makes str_to_name raise ValueError (more than one '.'); the
+    # config loader must wrap it as a ConfigError naming the config file, not
+    # let the ValueError escape as a raw traceback.
     _yaml(
         tmp_path,
         "vhdl_files:\n  work:\n    - ./top.vhd\ntop_entity: a.b.c\n",
@@ -202,6 +202,7 @@ def test_top_entity_multi_dot_raises_configerror_not_raw_valueerror(tmp_path, mo
     with pytest.raises(ConfigError) as ei:
         build_resolver("hdldeps.yaml", work_dir=Path("."))
     assert "hdldeps.yaml" in str(ei.value)
+    assert "invalid top_entity" in str(ei.value)
     assert "a.b.c" in str(ei.value)
 
 

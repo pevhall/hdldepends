@@ -16,10 +16,19 @@ def _filter(files: List[SourceFile], ftype: Optional[FileType], lib: Optional[st
         yield sf
 
 
-def print_compile_order(order: List[SourceFile]) -> None:
-    print("compile order:")
+def format_compile_order(order: List[SourceFile]) -> str:
+    """Render ``order`` as the human-readable, tree-indented compile-order
+    listing (the exact text :func:`print_compile_order` writes to stdout, minus
+    the trailing newline). Shared by the CLI and
+    :meth:`hdldepends.api.AnalysisResult.format_compile_order`."""
+    lines = ["compile order:"]
     for sf in order:
-        print(f"  {sf.type_str + ':':14} {'|---' * sf.level}{sf.lib}: {sf.loc}")
+        lines.append(f"  {sf.type_str + ':':14} {'|---' * sf.level}{sf.lib}: {sf.loc}")
+    return "\n".join(lines)
+
+
+def print_compile_order(order: List[SourceFile]) -> None:
+    print(format_compile_order(order))
 
 
 def write_compile_order(

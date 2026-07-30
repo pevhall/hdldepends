@@ -16,8 +16,8 @@ from hdldepends import api
 from hdldepends.config import build_resolver
 from hdldepends.constants import LIB_DEFAULT
 from hdldepends.errors import ConfigError
-from hdldepends.model import Name
-from hdldepends.output import write_compile_order_json
+from hdldepends.model import Name, SourceFile
+from hdldepends.output import format_compile_order, write_compile_order_json
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -162,8 +162,9 @@ def test_relative_top_file_is_anchored_to_work_dir(tmp_path, monkeypatch):
     assert result.compile_order[-1]["path"] == str(work / "del21.vhd")
 
     # Sanity check of the contrast: without work_dir the same relative
-    # top_file is CWD-relative, which from `elsewhere` names no project file.
-    with pytest.raises(ValueError, match="is not in the project"):
+    # top_file is CWD-relative, which from `elsewhere` names a path that is
+    # neither in the project nor on disk -- the auto-add then fails to read it.
+    with pytest.raises(OSError):
         hdldepends.analyse(str(work / "hdldeps.toml"), top_file="del21.vhd")
 
 
@@ -195,14 +196,52 @@ def test_top_entity_not_found_raises_value_error(tmp_path, monkeypatch):
         hdldepends.analyse("hdldeps.toml", top_entity="does_not_exist")
 
 
-def test_top_file_not_in_project_raises_value_error(tmp_path, monkeypatch):
+def test_top_file_not_in_project_is_added(tmp_path, monkeypatch):
+    # A top_file not listed in the config is parsed and added on the fly (its
+    # type inferred from the .vhd extension), so a testbench top level need not
+    # be added to the config just to run a compile order.
     work = tmp_path / "proj"
     shutil.copytree(FIXTURES_DIR / "vhdl_basic", work)
     (work / "not_in_project.vhd").write_text("library ieee;\nentity nip is end entity;\n")
     monkeypatch.chdir(work)
 
-    with pytest.raises(ValueError, match="not_in_project.vhd"):
-        hdldepends.analyse("hdldeps.toml", top_file="not_in_project.vhd")
+    result = hdldepends.analyse("hdldeps.toml", top_file="not_in_project.vhd")
+    assert result.compile_order[-1]["path"].endswith("not_in_project.vhd")
+    assert result.compile_order[-1]["is_top"] is True
+
+
+def test_added_top_file_pulls_in_config_dependencies(tmp_path, monkeypatch):
+    # An auto-added top file's dependencies still resolve against the project:
+    # a testbench that instantiates a config entity produces the full order.
+    work = tmp_path / "proj"
+    shutil.copytree(FIXTURES_DIR / "vhdl_basic", work)
+    (work / "tb.vhd").write_text(
+        "library ieee;\n"
+        "entity tb is end entity;\n"
+        "architecture sim of tb is\n"
+        "begin\n"
+        "  dut : entity work.del21\n"
+        "  port map (\n"
+        "    clk => clk\n"
+        "  );\n"
+        "end architecture;\n"
+    )
+    monkeypatch.chdir(work)
+
+    result = hdldepends.analyse("hdldeps.toml", top_file="tb.vhd")
+    paths = [f["path"] for f in result.compile_order]
+    assert paths[-1].endswith("tb.vhd")
+    assert any(p.endswith("del21.vhd") for p in paths[:-1])
+
+
+def test_added_top_file_unknown_extension_raises(tmp_path, monkeypatch):
+    work = tmp_path / "proj"
+    shutil.copytree(FIXTURES_DIR / "vhdl_basic", work)
+    (work / "top.qqq").write_text("nonsense\n")
+    monkeypatch.chdir(work)
+
+    with pytest.raises(ConfigError, match="extension"):
+        hdldepends.analyse("hdldeps.toml", top_file="top.qqq")
 
 
 def test_no_top_anywhere_raises_value_error(tmp_path, monkeypatch):
@@ -264,3 +303,64 @@ def test_x_tool_version_and_x_device_default_to_unset_on_resolver(tmp_path, monk
     resolver = build_resolver("hdldeps.toml", work_dir=Path("."), top_lib=LIB_DEFAULT)
     assert resolver.x_tool_version == ""
     assert resolver.x_device == ""
+
+
+# --- AnalysisResult.format_compile_order / print_compile_order --------------
+
+def test_format_compile_order_returns_indented_string(tmp_path, monkeypatch):
+    # del21 (the top) instantiates del211, so the resolved order is
+    # [del211 @ level 1, del21 @ level 0]: the dependency is tree-indented with
+    # "|---" and the top is not, exactly as the CLI prints it.
+    work = tmp_path / "proj"
+    shutil.copytree(FIXTURES_DIR / "vhdl_basic", work)
+    monkeypatch.chdir(work)
+
+    result = hdldepends.analyse("hdldeps.toml", top_entity="del21")
+    text = result.format_compile_order()
+
+    assert isinstance(text, str)
+    lines = text.splitlines()
+    assert lines[0] == "compile order:"
+    dep_line = next(ln for ln in lines if ln.endswith("del211.vhd"))
+    top_line = next(ln for ln in lines if ln.endswith("del21.vhd"))
+    assert "|---" in dep_line          # dependency is indented
+    assert "|---" not in top_line      # top sits at level 0
+
+
+def test_format_compile_order_matches_free_function(tmp_path, monkeypatch):
+    # The method is faithful to the CLI: it renders the retained SourceFile
+    # order through the very same output.format_compile_order helper the CLI
+    # uses, so the two are byte-for-byte identical.
+    work = tmp_path / "proj"
+    shutil.copytree(FIXTURES_DIR / "vhdl_basic", work)
+    monkeypatch.chdir(work)
+
+    result = hdldepends.analyse("hdldeps.toml", top_entity="del21")
+    assert result.format_compile_order() == format_compile_order(result.source_files)
+    assert all(isinstance(sf, SourceFile) for sf in result.source_files)
+
+
+def test_print_compile_order_writes_format_to_stdout(tmp_path, monkeypatch, capsys):
+    work = tmp_path / "proj"
+    shutil.copytree(FIXTURES_DIR / "vhdl_basic", work)
+    monkeypatch.chdir(work)
+
+    result = hdldepends.analyse("hdldeps.toml", top_entity="del21")
+    result.print_compile_order()
+
+    out = capsys.readouterr().out
+    assert out == result.format_compile_order() + "\n"
+
+
+def test_source_files_excluded_from_to_dict(tmp_path, monkeypatch):
+    # source_files holds live SourceFile objects for rendering only; the
+    # JSON-safe representation must not leak them.
+    work = tmp_path / "proj"
+    shutil.copytree(FIXTURES_DIR / "vhdl_basic", work)
+    monkeypatch.chdir(work)
+
+    result = hdldepends.analyse("hdldeps.toml", top_entity="del21")
+    d = result.to_dict()
+    assert set(d.keys()) == {"files"}
+    # round-trips through JSON without hitting the non-serializable SourceFiles
+    json.dumps(d)

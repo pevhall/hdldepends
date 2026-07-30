@@ -2,7 +2,32 @@
 
 All notable changes to this project are documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [PEP 440](https://peps.python.org/pep-0440/) for
+version identifiers (`.devN` marks a development pre-release).
+
+## [0.3.0.dev1] - 2026-07-18
+
+### Added
+- `AnalysisResult.format_compile_order()` returns the human-readable,
+  tree-indented compile-order listing as a string, and
+  `AnalysisResult.print_compile_order()` prints it -- the same output the CLI
+  emits. `AnalysisResult` now retains the underlying `SourceFile` order (a
+  non-serialized `source_files` field; `to_dict()` is unchanged). The shared
+  rendering logic lives in `output.format_compile_order`.
+
+## [0.3.0.dev0] - 2026-07-18
+
+Opens the 0.3.0 development cycle.
+
+### Fixed
+- `analyse(top_file=...)` now parses and adds a top file that is not already
+  part of the project (file type inferred from its extension) instead of
+  raising "not in the project", so a testbench top level need not be listed in
+  the config just to produce a compile order. New
+  `config.add_top_file_by_path` / `config.TOP_FILE_EXT_TYPES`; added
+  `Resolver.verilog_include_dirs` so an auto-added Verilog top can resolve its
+  `` `include `` directives.
 
 ## [0.2.0] - 2026-07-11
 
