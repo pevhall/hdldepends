@@ -1073,6 +1073,7 @@ def verilog_remove_comments(verilog_code):
 
 
 WHITESPACE_CHARS = " \t\n\r\v\f"
+TOKEN_SEPERATOR_CHARS  = " \t\n\r\v\f[]()#"
 
 
 def get_idx_of_next_char(text, idx_start, c):
@@ -1104,20 +1105,20 @@ def get_prev_idx_of_next_char_not(text, idx_start, c):
 
 
 def get_prev_token(text, idx_start):
-    idx_s = get_prev_idx_of_next_char_not(text, idx_start, WHITESPACE_CHARS)
+    idx_s = get_prev_idx_of_next_char_not(text, idx_start, TOKEN_SEPERATOR_CHARS)
     if idx_s is None:
         return None, None
-    idx_e = get_prev_idx_of_next_char(text, idx_s, WHITESPACE_CHARS)
+    idx_e = get_prev_idx_of_next_char(text, idx_s, TOKEN_SEPERATOR_CHARS)
     if idx_e is None:
         idx_e = 0
     return idx_e, text[idx_e + 1 : idx_s + 1]
 
 
 def get_next_token(text, idx_start):
-    idx_s = get_idx_of_next_char_not(text, idx_start, WHITESPACE_CHARS)
+    idx_s = get_idx_of_next_char_not(text, idx_start, TOKEN_SEPERATOR_CHARS)
     if idx_s is None:
         return None, None
-    idx_e = get_idx_of_next_char(text, idx_s, WHITESPACE_CHARS)
+    idx_e = get_idx_of_next_char(text, idx_s, TOKEN_SEPERATOR_CHARS)
     if idx_e is None:
         return None, None
     return idx_e, text[idx_s:idx_e]
@@ -1332,7 +1333,7 @@ def verilog_extract_include_files(verilog_code):
 def verilog_extract_packages(verilog_code):
 
     pattern = r'package\s+(\w+)\s*;'
-    matches = re.finditer(pattern, verilog_code, re.DOTALL | re.IGNORECASE)
+    matches = re.finditer(pattern, verilog_code, re.DOTALL)
 
     packages = []
     for match in matches:
@@ -1343,7 +1344,7 @@ def verilog_extract_packages(verilog_code):
 
 def verilog_extract_package_imports(verilog_code):
     pattern = r'\bimport\s+(\w+)::([\w\*]+)\s*;'
-    matches = re.finditer(pattern, verilog_code, re.DOTALL | re.IGNORECASE)
+    matches = re.finditer(pattern, verilog_code, re.DOTALL)
 
     packages = []
     for match in matches:
