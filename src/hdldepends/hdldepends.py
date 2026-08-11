@@ -1073,7 +1073,7 @@ def verilog_remove_comments(verilog_code):
 
 
 WHITESPACE_CHARS = " \t\n\r\v\f"
-TOKEN_SEPERATOR_CHARS  = " \t\n\r\v\f[]()#"
+TOKEN_SEPERATOR_CHARS  = " \t\n\r\v\f#"
 
 
 def get_idx_of_next_char(text, idx_start, c):
@@ -2373,11 +2373,14 @@ class LookupSingular(Lookup):  # {{{
         return loc in self.loc_2_file_obj
 
     def get_verilog_include_dir_list(self) -> list[Path]:
-        assert self.verilog_include_dir_list is not None
+        if self.verilog_include_dir_list is None:
+            self.verilog_include_dir_list = []
         return self.verilog_include_dir_list
 
     def get_verilog_include_file_list(self) -> list[FileObjVerilogInclude]:
-        assert self.verilog_include_file_list is not None
+
+        if self.verilog_include_file_list is None:
+            self.verilog_include_file_list = []
         return self.verilog_include_file_list
 
     def get_vhdl_package(self, name: Name, f_obj_required_by: Optional[FileObjVhdl]) -> Optional[FileObjVhdl]:
@@ -2533,10 +2536,7 @@ class LookupSingular(Lookup):  # {{{
                 if f_type is not None:
                     if f_obj.f_type != f_type:
                         continue
-                if lib is None:
-                    f.write(f"{f_obj.lib}\t{f_obj.loc}\n")
-                else:
-                    f.write(str(f_obj.loc) + "\n")
+                f.write(str(f_obj.loc) + "\n")
 
     def write_ext_file_list(self, f_loc: Path, ver_tag: Optional[str] = None):
         log.debug(f"Called write_ext_file_list(f_loc = {f_loc}, ver_tag = {ver_tag})")
