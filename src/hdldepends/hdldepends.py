@@ -65,7 +65,7 @@ class log:
 
 TOML_KEY_VER_SEP = "@"
 
-HDL_DEPENDS_VERSION_NUM = 1.04
+HDL_DEPENDS_VERSION_NUM = 1.05
 
 
 
@@ -1073,7 +1073,7 @@ def verilog_remove_comments(verilog_code):
 
 
 WHITESPACE_CHARS = " \t\n\r\v\f"
-TOKEN_SEPERATOR_CHARS  = " \t\n\r\v\f#"
+TOKEN_SEPERATOR_CHARS  = " \t\n\r\v\f()[]"
 
 
 def get_idx_of_next_char(text, idx_start, c):
