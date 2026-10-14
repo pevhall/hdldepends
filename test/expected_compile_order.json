@@ -1,0 +1,150 @@
+{
+  "files": [
+    {
+      "type": "EXTERNAL",
+      "file_ext": "XDC",
+      "path": "@TEST_DIR@/vhdl/ppp1.xdc",
+      "ver_tag": "p"
+    },
+    {
+      "type": "EXTERNAL",
+      "file_ext": "XDC",
+      "path": "@TEST_DIR@/vhdl/ppp2.xdc",
+      "ver_tag": "p"
+    },
+    {
+      "type": "EXTERNAL",
+      "file_ext": "XCI",
+      "path": "@TEST_DIR@/vhdl/s1_2.xci",
+      "ver_tag": "s1"
+    },
+    {
+      "type": "EXTERNAL",
+      "file_ext": "XCI",
+      "path": "@TEST_DIR@/vhdl/s1_3.xci",
+      "ver_tag": "s1"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/encrypted.vhd",
+      "library": "work"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/encrypted2.vhdl",
+      "library": "top_lib",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VERILOG",
+      "path": "@TEST_DIR@/vhdl/encrypted3.v",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/del211.vhd",
+      "library": "work",
+      "ver_tag": "s2"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/del21.vhd",
+      "library": "work",
+      "ver_tag": "s2"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/del2.vhd",
+      "library": "work",
+      "ver_tag": "s1"
+    },
+    {
+      "type": "VERILOG",
+      "path": "@TEST_DIR@/vhdl/misc_package.sv",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VERILOG",
+      "path": "@TEST_DIR@/vhdl/axis_data_to_chdr.sv",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VERILOG",
+      "path": "@TEST_DIR@/vhdl/counter.v",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/bd_hdl.vhd",
+      "library": "work",
+      "ver_tag": "p"
+    },
+    {
+      "type": "X_BD",
+      "path": "@TEST_DIR@/vhdl/design_2.bd",
+      "ver_tag": "p"
+    },
+    {
+      "type": "X_BD",
+      "path": "@TEST_DIR@/vhdl/design_1.bd",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/del3.vhd",
+      "library": "work",
+      "ver_tag": "p"
+    },
+    {
+      "type": "X_XCI",
+      "path": "@TEST_DIR@/vhdl/vivado_2024.2/axi_bram_ctrl_0.xci",
+      "library": "work",
+      "ver_tag": "p"
+    },
+    {
+      "type": "DIRECT",
+      "path": "@TEST_DIR@/vhdl/fir_compiler_0.mif"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/fir_compiler_0_sim_netlist.vhdl",
+      "library": "work",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/del_pkg.vhd",
+      "library": "work",
+      "ver_tag": "s2"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/del_ipkg.vhd",
+      "library": "work",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/led_controller.vhd",
+      "library": "work",
+      "ver_tag": "p"
+    },
+    {
+      "type": "DIRECT",
+      "path": "@TEST_DIR@/vhdl/fir_compiler_0_coefs.coe"
+    },
+    {
+      "type": "X_XCI",
+      "path": "@TEST_DIR@/vhdl/fir_compiler_0.xci",
+      "library": "work",
+      "ver_tag": "p"
+    },
+    {
+      "type": "VHDL",
+      "path": "@TEST_DIR@/vhdl/del.vhd",
+      "is_top": true,
+      "library": "work",
+      "ver_tag": "p"
+    }
+  ]
+}

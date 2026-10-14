@@ -1355,7 +1355,14 @@ def verilog_extract_package_imports(verilog_code):
     return packages
 
 def verilog_extract_module_declarations(verilog_code):
-    module_declaration_regex = r"module\s+(\w+)\s*[#(;]"
+    # SystemVerilog allows namespace import statements between the module name
+    # and the parameter/port list, e.g.:
+    #   module foo
+    #   import pkg::*;
+    #   #(...) (...);
+    # Skip over them so the module declaration is still detected.
+    import_item = r"import\s+[^;]+;\s*"
+    module_declaration_regex = r"module\s+(\w+)\s*(?:" + import_item + r")*[#(;]"
     matches = re.finditer(module_declaration_regex, verilog_code)
     declarations = []
 
